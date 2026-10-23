@@ -25,7 +25,7 @@ function App(): React.JSX.Element {
     <Provider store={store}>
       <PersistGate loading={<LoadingFallback />} persistor={persistor}>
         <SafeAreaProvider>
-          <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
+          <StatusBar barStyle="dark-content" />
           <NavigationContainer>
             <RootNavigator />
           </NavigationContainer>
@@ -38,7 +38,7 @@ function App(): React.JSX.Element {
 function LoadingFallback(): React.JSX.Element {
   return (
     <View style={styles.loadingContainer}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.paper} />
+      <StatusBar barStyle="dark-content" />
       <View style={styles.loadingContent}>
         <BrandLogo size="lg" showTagline />
         <View style={styles.loadingIndicatorContainer}>
