@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export let API_BASE_URL = 'http://10.0.2.2:3001';
+export let API_BASE_URL = 'https://dgstore-zwd3.onrender.com';
 export const apiClient = axios.create({ baseURL: API_BASE_URL, timeout: 10000, headers: { 'Content-Type': 'application/json' } });
 
 export function updateApiBaseUrl(newUrl: string): void {
