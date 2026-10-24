@@ -59,7 +59,7 @@ export function RegisterScreen(): React.JSX.Element {
   const [serverError, setServerError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<React.ElementRef<typeof ScrollView>>(null);
 
   useEffect(() => {
     const showSub = Keyboard.addListener(

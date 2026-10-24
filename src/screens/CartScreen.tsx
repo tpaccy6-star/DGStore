@@ -232,7 +232,7 @@ export function CartScreen(): React.JSX.Element {
                 <ArrowRight color={colors.white} size={18} />
               </Pressable>
             </View>
-          ) : null
+          ) : undefined
         }
         ListHeaderComponent={
           items.length > 0 ? (
@@ -251,7 +251,7 @@ export function CartScreen(): React.JSX.Element {
                 <Text style={styles.addMoreHeaderBtnText}>Add items</Text>
               </Pressable>
             </View>
-          ) : null
+          ) : undefined
         }
         renderItem={({ item }) => (
           <View style={[styles.itemCard, cardShadow]}>
