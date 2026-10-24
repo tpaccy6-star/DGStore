@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import {
   ArrowRight,
@@ -12,6 +12,7 @@ import {
   UserCheck,
 } from 'lucide-react-native';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -57,6 +58,23 @@ export function RegisterScreen(): React.JSX.Element {
 
   const [serverError, setServerError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setIsKeyboardVisible(true),
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setIsKeyboardVisible(false),
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const {
     control,
@@ -99,13 +117,18 @@ export function RegisterScreen(): React.JSX.Element {
         style={styles.keyboardView}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          ref={scrollViewRef}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isKeyboardVisible && styles.scrollContentKeyboard,
+          ]}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
         >
           {/* Brand Presentation */}
-          <View style={styles.brandHero}>
-            <BrandLogo size="lg" showTagline />
+          <View style={[styles.brandHero, isKeyboardVisible && styles.brandHeroCompact]}>
+            <BrandLogo size={isKeyboardVisible ? 'sm' : 'lg'} showTagline={!isKeyboardVisible} />
           </View>
 
           {/* Card Container */}
@@ -144,6 +167,11 @@ export function RegisterScreen(): React.JSX.Element {
                     <TextInput
                       autoCapitalize="words"
                       onChangeText={onChange}
+                      onFocus={() => {
+                        setTimeout(() => {
+                          scrollViewRef.current?.scrollTo({ y: 30, animated: true });
+                        }, 120);
+                      }}
                       placeholder="e.g. Jean Dupont"
                       placeholderTextColor={colors.mutedLight}
                       style={styles.input}
@@ -168,6 +196,11 @@ export function RegisterScreen(): React.JSX.Element {
                       autoCapitalize="none"
                       autoCorrect={false}
                       onChangeText={onChange}
+                      onFocus={() => {
+                        setTimeout(() => {
+                          scrollViewRef.current?.scrollTo({ y: 100, animated: true });
+                        }, 120);
+                      }}
                       placeholder="e.g. jdupont"
                       placeholderTextColor={colors.mutedLight}
                       style={styles.input}
@@ -193,6 +226,11 @@ export function RegisterScreen(): React.JSX.Element {
                       autoCorrect={false}
                       keyboardType="email-address"
                       onChangeText={onChange}
+                      onFocus={() => {
+                        setTimeout(() => {
+                          scrollViewRef.current?.scrollTo({ y: 170, animated: true });
+                        }, 120);
+                      }}
                       placeholder="you@example.com"
                       placeholderTextColor={colors.mutedLight}
                       style={styles.input}
@@ -218,6 +256,11 @@ export function RegisterScreen(): React.JSX.Element {
                   render={({ field: { onChange, value } }) => (
                     <TextInput
                       onChangeText={onChange}
+                      onFocus={() => {
+                        setTimeout(() => {
+                          scrollViewRef.current?.scrollTo({ y: 250, animated: true });
+                        }, 120);
+                      }}
                       placeholder="Create a strong password"
                       placeholderTextColor={colors.mutedLight}
                       secureTextEntry={!showPassword}
@@ -284,6 +327,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     marginTop: 8,
+  },
+  brandHeroCompact: {
+    marginBottom: 6,
+    marginTop: 0,
   },
   buttonDisabled: {
     opacity: 0.65,
@@ -387,9 +434,12 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
     paddingHorizontal: spacing.page,
-    paddingVertical: 20,
+    paddingTop: 12,
+    paddingBottom: 40,
+  },
+  scrollContentKeyboard: {
+    paddingBottom: 320,
   },
   serverError: {
     color: colors.danger,
