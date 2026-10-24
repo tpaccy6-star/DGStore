@@ -24,6 +24,7 @@ export type WhatsAppSettings = {
   phone: string;
   apiKey: string;
   webhookUrl: string;
+  ntfyTopic?: string;
   enabled: boolean;
 };
 
@@ -35,6 +36,7 @@ export async function updateWhatsAppSettings(input: {
   phone?: string;
   apiKey?: string;
   webhookUrl?: string;
+  ntfyTopic?: string;
 }): Promise<WhatsAppSettings> {
   return (await apiClient.post<WhatsAppSettings>('/admin/settings/whatsapp', input)).data;
 }
@@ -43,6 +45,7 @@ export async function testWhatsAppNotification(input?: {
   phone?: string;
   apiKey?: string;
   webhookUrl?: string;
+  ntfyTopic?: string;
 }): Promise<{ message: string; success: boolean }> {
   return (await apiClient.post<{ message: string; success: boolean }>('/admin/settings/whatsapp/test', input || {})).data;
 }

@@ -387,6 +387,24 @@ app.post('/orders', optionalAuth, (req, res) => {
       }).catch(err => console.error('[WhatsApp Order Dispatch Error]:', err.message));
     }
 
+    // Owner Mobile Phone Push via ntfy.sh (100% Free, Zero-wait, Instant Lockscreen Push Alerts)
+    const ntfyTopic = getSetting('NTFY_TOPIC');
+    if (ntfyTopic) {
+      try {
+        fetch(`https://ntfy.sh/${encodeURIComponent(ntfyTopic.trim())}`, {
+          method: 'POST',
+          headers: {
+            'Title': `🔔 DGStore: New Order #${id} (${total.toLocaleString()} RWF)`,
+            'Priority': 'urgent',
+            'Tags': 'shopping_bags,moneybag'
+          },
+          body: `Customer: ${customerName}${isGuest ? ' (Direct Pay)' : ''}\nTotal: ${total.toLocaleString()} RWF\nDelivery: ${deliveryAddress.trim()}${customerPhone ? `\nPhone: ${customerPhone}` : ''}\n\nItems:\n${orderItems.map(i => `• ${i.name} x${i.quantity}`).join('\n')}`
+        }).catch(err => console.error('[ntfy Push Error]:', err.message));
+      } catch (ntfyErr) {
+        console.error('[ntfy Dispatch Error]:', ntfyErr.message);
+      }
+    }
+
     res.status(201).json(orderById(id, userId));
   } catch (err) {
     res.status(400).json({ message: err.message || 'Could not complete order' });
@@ -447,35 +465,40 @@ app.patch('/admin/notifications/read-all', auth, ownerOnly, (_req, res) => {
   res.status(204).end();
 });
 
-// Admin WhatsApp Settings API
+// Admin WhatsApp & Alert Settings API
 app.get('/admin/settings/whatsapp', auth, ownerOnly, (_req, res) => {
   const phone = getSetting('WHATSAPP_OWNER_PHONE');
   const apiKey = getSetting('WHATSAPP_API_KEY');
   const webhookUrl = getSetting('WHATSAPP_WEBHOOK_URL');
+  const ntfyTopic = getSetting('NTFY_TOPIC');
   res.json({
     phone,
     apiKey,
     webhookUrl,
-    enabled: Boolean((phone && apiKey) || webhookUrl)
+    ntfyTopic,
+    enabled: Boolean((phone && apiKey) || webhookUrl || ntfyTopic)
   });
 });
 
 app.post('/admin/settings/whatsapp', auth, ownerOnly, (req, res) => {
-  const { phone, apiKey, webhookUrl } = req.body || {};
+  const { phone, apiKey, webhookUrl, ntfyTopic } = req.body || {};
   if (phone !== undefined) setSetting('WHATSAPP_OWNER_PHONE', phone.trim());
   if (apiKey !== undefined) setSetting('WHATSAPP_API_KEY', apiKey.trim());
   if (webhookUrl !== undefined) setSetting('WHATSAPP_WEBHOOK_URL', webhookUrl.trim());
+  if (ntfyTopic !== undefined) setSetting('NTFY_TOPIC', ntfyTopic.trim());
 
   const savedPhone = getSetting('WHATSAPP_OWNER_PHONE');
   const savedApiKey = getSetting('WHATSAPP_API_KEY');
   const savedWebhook = getSetting('WHATSAPP_WEBHOOK_URL');
+  const savedNtfy = getSetting('NTFY_TOPIC');
 
   res.json({
-    message: 'WhatsApp notification settings saved successfully',
+    message: 'Alert settings saved successfully',
     phone: savedPhone,
     apiKey: savedApiKey,
     webhookUrl: savedWebhook,
-    enabled: Boolean((savedPhone && savedApiKey) || savedWebhook)
+    ntfyTopic: savedNtfy,
+    enabled: Boolean((savedPhone && savedApiKey) || savedWebhook || savedNtfy)
   });
 });
 
@@ -483,25 +506,54 @@ app.post('/admin/settings/whatsapp/test', auth, ownerOnly, async (req, res) => {
   const phone = req.body?.phone || getSetting('WHATSAPP_OWNER_PHONE');
   const apiKey = req.body?.apiKey || getSetting('WHATSAPP_API_KEY');
   const webhookUrl = req.body?.webhookUrl || getSetting('WHATSAPP_WEBHOOK_URL');
+  const ntfyTopic = req.body?.ntfyTopic || getSetting('NTFY_TOPIC');
 
-  if (!((phone && apiKey) || webhookUrl)) {
-    return res.status(400).json({ message: 'Please provide WhatsApp Phone Number & API Key (or Webhook URL) to test.' });
+  if (!((phone && apiKey) || webhookUrl || ntfyTopic)) {
+    return res.status(400).json({ message: 'Please provide WhatsApp Phone & API Key, Webhook URL, or ntfy topic to test.' });
   }
 
-  const testText = `✅ *D&G Store WhatsApp Test*\n\nYour WhatsApp notifications are configured and working!\nYou will receive instant alerts on this number whenever a customer places an order on D&G Store.\n\n_Sent on ${new Date().toLocaleString()}_`;
+  const testText = `✅ *D&G Store Alert Test*\n\nYour instant notifications are configured and working!\nYou will receive instant alerts here whenever a customer places an order on D&G Store.\n\n_Sent on ${new Date().toLocaleString()}_`;
 
-  try {
-    const success = await sendWhatsAppAlert({
-      phone,
-      apiKey,
-      webhookUrl,
-      text: testText,
-      payload: { test: true }
-    });
-    res.json({ message: 'Test message sent. Check your WhatsApp!', success });
-  } catch (err) {
-    res.status(500).json({ message: `Failed to dispatch test WhatsApp message: ${err.message}` });
+  let sentWhatsApp = false;
+  let sentNtfy = false;
+
+  if ((phone && apiKey) || webhookUrl) {
+    try {
+      sentWhatsApp = await sendWhatsAppAlert({
+        phone,
+        apiKey,
+        webhookUrl,
+        text: testText,
+        payload: { test: true }
+      });
+    } catch (err) {
+      console.error('[Test WhatsApp Error]:', err.message);
+    }
   }
+
+  if (ntfyTopic) {
+    try {
+      await fetch(`https://ntfy.sh/${encodeURIComponent(ntfyTopic.trim())}`, {
+        method: 'POST',
+        headers: {
+          'Title': '✅ DGStore Alert Test',
+          'Priority': 'default',
+          'Tags': 'white_check_mark,bell'
+        },
+        body: `Your phone alerts are working! Orders will ring your phone instantly.\nTime: ${new Date().toLocaleTimeString()}`
+      });
+      sentNtfy = true;
+    } catch (err) {
+      console.error('[Test ntfy Error]:', err.message);
+    }
+  }
+
+  res.json({
+    message: 'Test notification triggered! Check your WhatsApp and phone alerts.',
+    success: sentWhatsApp || sentNtfy,
+    sentWhatsApp,
+    sentNtfy
+  });
 });
 
 app.use((error, _req, res, _next) => { console.error(error); res.status(500).json({ message: 'Unexpected server error' }); });

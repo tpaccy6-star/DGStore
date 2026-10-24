@@ -108,10 +108,11 @@ export function AdminScreen(): React.JSX.Element {
   const [productCategoryFilter, setProductCategoryFilter] = useState('All');
   const [productSearch, setProductSearch] = useState('');
 
-  // WhatsApp Notification Settings State
+  // WhatsApp & Phone Notification Settings State
   const [waPhone, setWaPhone] = useState('');
   const [waApiKey, setWaApiKey] = useState('');
   const [waWebhookUrl, setWaWebhookUrl] = useState('');
+  const [ntfyTopic, setNtfyTopic] = useState('');
   const [waEnabled, setWaEnabled] = useState(false);
   const [waSaving, setWaSaving] = useState(false);
   const [waTesting, setWaTesting] = useState(false);
@@ -160,6 +161,7 @@ export function AdminScreen(): React.JSX.Element {
         setWaPhone(nextWa.value.phone || '');
         setWaApiKey(nextWa.value.apiKey || '');
         setWaWebhookUrl(nextWa.value.webhookUrl || '');
+        setNtfyTopic(nextWa.value.ntfyTopic || '');
         setWaEnabled(Boolean(nextWa.value.enabled));
       }
       setError(results.every(result => result.status === 'rejected'));
@@ -172,8 +174,8 @@ export function AdminScreen(): React.JSX.Element {
   }, []);
 
   async function saveWhatsApp() {
-    if (!waPhone.trim() && !waApiKey.trim() && !waWebhookUrl.trim()) {
-      Alert.alert('Configuration Required', 'Please enter your WhatsApp phone number and CallMeBot API key.');
+    if (!waPhone.trim() && !waApiKey.trim() && !waWebhookUrl.trim() && !ntfyTopic.trim()) {
+      Alert.alert('Configuration Required', 'Please enter your WhatsApp details, custom webhook, or ntfy topic.');
       return;
     }
     setWaSaving(true);
@@ -182,22 +184,24 @@ export function AdminScreen(): React.JSX.Element {
         phone: waPhone.trim(),
         apiKey: waApiKey.trim(),
         webhookUrl: waWebhookUrl.trim(),
+        ntfyTopic: ntfyTopic.trim(),
       });
       setWaPhone(res.phone || '');
       setWaApiKey(res.apiKey || '');
       setWaWebhookUrl(res.webhookUrl || '');
+      setNtfyTopic(res.ntfyTopic || '');
       setWaEnabled(Boolean(res.enabled));
-      Alert.alert('WhatsApp Configured', 'Your WhatsApp notification settings have been saved successfully.');
+      Alert.alert('Settings Saved', 'Your order notification preferences have been saved successfully.');
     } catch (err: any) {
-      Alert.alert('Save Failed', err?.response?.data?.message || 'Could not save WhatsApp settings');
+      Alert.alert('Save Failed', err?.response?.data?.message || 'Could not save notification settings');
     } finally {
       setWaSaving(false);
     }
   }
 
   async function testWhatsApp() {
-    if (!waPhone.trim() || !waApiKey.trim()) {
-      Alert.alert('Missing Details', 'Please enter both your WhatsApp phone number and API key before testing.');
+    if (!((waPhone.trim() && waApiKey.trim()) || waWebhookUrl.trim() || ntfyTopic.trim())) {
+      Alert.alert('Missing Details', 'Please provide either WhatsApp credentials or an ntfy topic to send a test alert.');
       return;
     }
     setWaTesting(true);
@@ -206,13 +210,28 @@ export function AdminScreen(): React.JSX.Element {
         phone: waPhone.trim(),
         apiKey: waApiKey.trim(),
         webhookUrl: waWebhookUrl.trim(),
+        ntfyTopic: ntfyTopic.trim(),
       });
-      Alert.alert('Test Dispatched', res.message || 'Check your WhatsApp! A test message was sent.');
+      Alert.alert('Test Dispatched', res.message || 'Check your phone! A test notification was sent.');
     } catch (err: any) {
-      Alert.alert('Test Failed', err?.response?.data?.message || 'Failed to dispatch test WhatsApp message.');
+      Alert.alert('Test Failed', err?.response?.data?.message || 'Failed to dispatch test notification.');
     } finally {
       setWaTesting(false);
     }
+  }
+
+  function openCustomerWhatsApp(phoneRaw?: string, customerName?: string, orderId?: string) {
+    if (!phoneRaw) return;
+    const cleanPhone = phoneRaw.replace(/\D/g, '');
+    if (!cleanPhone) {
+      Alert.alert('No valid phone number', 'Customer phone number is invalid.');
+      return;
+    }
+    const message = `Hello ${customerName || 'Customer'}, this is D&G Store regarding your order #${orderId || ''}.`;
+    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Unable to open WhatsApp', `Could not open WhatsApp for number ${phoneRaw}`);
+    });
   }
 
   function openCallMeBotWhatsApp() {
@@ -547,6 +566,24 @@ export function AdminScreen(): React.JSX.Element {
                     </View>
                   )}
 
+                  {/* Direct WhatsApp Customer Contact Button */}
+                  {(() => {
+                    const phoneMatch = (order.paymentMethod || '').match(/\b(07\d{8}|\+?250\d{9})\b/) ||
+                                       (order.deliveryAddress || '').match(/\b(07\d{8}|\+?250\d{9})\b/);
+                    const custPhone = phoneMatch ? phoneMatch[0] : '';
+                    if (!custPhone) return null;
+                    return (
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => openCustomerWhatsApp(custPhone, order.customerName || 'Customer', order.id)}
+                        style={styles.orderWhatsAppBtn}
+                      >
+                        <MessageCircle color="#075E54" size={13} strokeWidth={2.5} />
+                        <Text style={styles.orderWhatsAppBtnText}>Chat with Customer on WhatsApp ({custPhone})</Text>
+                      </Pressable>
+                    );
+                  })()}
+
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statusRow}>
                     {statuses.map(status => (
                       <Pressable
@@ -620,7 +657,7 @@ export function AdminScreen(): React.JSX.Element {
             ) : (
               <View style={styles.notifList}>
                 {notifications.map(notif => {
-                  let parsed: { customerName?: string; total?: number; itemsCount?: number; items?: string[]; paymentMethod?: string; deliveryAddress?: string } = {};
+                  let parsed: { customerName?: string; customerPhone?: string; orderId?: string; total?: number; itemsCount?: number; items?: string[]; paymentMethod?: string; deliveryAddress?: string } = {};
                   if (notif.data) {
                     try {
                       parsed = JSON.parse(notif.data);
@@ -686,6 +723,17 @@ export function AdminScreen(): React.JSX.Element {
                         </Text>
                       )}
 
+                      {parsed.customerPhone && (
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => openCustomerWhatsApp(parsed.customerPhone, parsed.customerName, parsed.orderId)}
+                          style={styles.orderWhatsAppBtn}
+                        >
+                          <MessageCircle color="#075E54" size={13} strokeWidth={2.5} />
+                          <Text style={styles.orderWhatsAppBtnText}>WhatsApp Customer ({parsed.customerPhone})</Text>
+                        </Pressable>
+                      )}
+
                       <View style={styles.notifActionRow}>
                         <Pressable
                           style={styles.notifViewBtn}
@@ -739,9 +787,9 @@ export function AdminScreen(): React.JSX.Element {
 
               {/* 30-Second Setup Guide */}
               <View style={styles.waGuideBox}>
-                <Text style={styles.waGuideTitle}>⚡ 30-Second Free Setup (CallMeBot):</Text>
+                <Text style={styles.waGuideTitle}>⚡ Option A: Free WhatsApp Bot (CallMeBot):</Text>
                 <Text style={styles.waStepText}>
-                  <Text style={styles.waStepNum}>1. </Text>Open WhatsApp & message CallMeBot to get your free personal API key:
+                  <Text style={styles.waStepNum}>1. </Text>Open WhatsApp & message CallMeBot to get your API key:
                 </Text>
                 <Pressable
                   accessibilityRole="button"
@@ -756,7 +804,7 @@ export function AdminScreen(): React.JSX.Element {
                   <Text style={styles.waStepNum}>2. </Text>Send: <Text style={styles.waCodeText}>I allow callmebot to send me messages</Text>
                 </Text>
                 <Text style={styles.waStepText}>
-                  <Text style={styles.waStepNum}>3. </Text>CallMeBot will reply with your API key. Paste your phone number and key below.
+                  <Text style={styles.waStepNum}>3. </Text>Paste your phone number & received API key below:
                 </Text>
               </View>
 
@@ -783,13 +831,42 @@ export function AdminScreen(): React.JSX.Element {
                 value={waApiKey}
               />
 
+              {/* Instant Phone Push Option (ntfy.sh - 100% Free & Zero Wait) */}
+              <View style={styles.ntfySection}>
+                <View style={styles.ntfyHeader}>
+                  <Bell color="#1B5E20" size={15} strokeWidth={2.5} />
+                  <Text style={styles.ntfyTitle}>⚡ Option B: Instant Phone Lockscreen Alerts (ntfy.sh)</Text>
+                </View>
+                <Text style={styles.ntfyExplainer}>
+                  Free, zero-signup, and has no capacity limits! Enter a secret topic name below, install the free <Text style={{ fontWeight: '700' }}>ntfy</Text> app on Android/iOS, and receive instant sound & vibration order alerts!
+                </Text>
+                <Text style={styles.waInputLabel}>ntfy Secret Topic Name</Text>
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onChangeText={setNtfyTopic}
+                  placeholder="e.g. dgstore-owner-alerts-kigali"
+                  placeholderTextColor={colors.mutedLight}
+                  style={styles.waInput}
+                  value={ntfyTopic}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => Linking.openURL(`https://ntfy.sh/${ntfyTopic || 'dgstore-owner-alerts'}`)}
+                  style={styles.ntfyOpenBtn}
+                >
+                  <ExternalLink color="#075E54" size={13} />
+                  <Text style={styles.ntfyOpenBtnText}>Open / Subscribe to Topic in Browser or App</Text>
+                </Pressable>
+              </View>
+
               {/* Advanced Custom Webhook Toggle */}
               <Pressable
                 onPress={() => setShowAdvancedWa(prev => !prev)}
                 style={styles.waAdvancedToggle}
               >
                 <Text style={styles.waAdvancedToggleText}>
-                  {showAdvancedWa ? '▾ Hide Advanced Webhook' : '▸ Custom Webhook URL (Twilio, Zapier, Make, n8n)'}
+                  {showAdvancedWa ? '▾ Hide Advanced Webhook' : '▸ Option C: Custom Webhook URL (TextMeBot, Twilio, Zapier, Make)'}
                 </Text>
               </Pressable>
 
@@ -2326,5 +2403,66 @@ const styles = StyleSheet.create({
   },
   btnDisabled: {
     opacity: 0.6,
+  },
+  orderWhatsAppBtn: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#DCF8C6',
+    borderColor: '#25D366',
+    borderRadius: 6,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 5,
+    marginVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  orderWhatsAppBtnText: {
+    color: '#075E54',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  ntfySection: {
+    backgroundColor: '#F0FBF4',
+    borderColor: '#CDE5D4',
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 10,
+    padding: spacing.sm,
+  },
+  ntfyHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 4,
+  },
+  ntfyTitle: {
+    color: '#1B5E20',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  ntfyExplainer: {
+    color: '#2D5B31',
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginBottom: 4,
+  },
+  ntfyOpenBtn: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#DCF8C6',
+    borderColor: '#25D366',
+    borderRadius: 6,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 5,
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  ntfyOpenBtnText: {
+    color: '#075E54',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });
