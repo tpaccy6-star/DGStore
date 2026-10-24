@@ -291,31 +291,38 @@ export function CheckoutScreen(): React.JSX.Element {
               </View>
             </View>
 
-            {user ? (
+            {/* Direct WhatsApp Confirmation to Store Owner */}
+            <View style={{ gap: spacing.sm, width: '100%', marginTop: spacing.sm }}>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => navigation.navigate('Orders')}
-                style={styles.primaryButton}
+                onPress={() => {
+                  const itemsList = (successOrder.items || []).map(i => `• ${i.name} (x${i.quantity})`).join('\n');
+                  const message = `🛍️ *New D&G Store Order #${successOrder.id}*\n\n` +
+                    `*Customer:* ${guestName || user?.name || 'Customer'}\n` +
+                    `*Amount:* ${formatRwf(successOrder.total)}\n` +
+                    `*Payment:* ${successOrder.paymentMethod || paymentMethod.toUpperCase()}\n` +
+                    `*Delivery:* ${successOrder.deliveryAddress || 'Kigali'}\n\n` +
+                    (itemsList ? `*Items:*\n${itemsList}\n\n` : '') +
+                    `Please confirm order preparation and dispatch!`;
+                  openWhatsAppConcierge(message);
+                }}
+                style={[styles.primaryButton, { backgroundColor: '#25D366' }]}
               >
-                <Text style={styles.primaryButtonText}>Track my order  →</Text>
+                <MessageCircle color={colors.white} size={18} />
+                <Text style={[styles.primaryButtonText, { color: colors.white }]}>
+                  Send Order to Store on WhatsApp  →
+                </Text>
               </Pressable>
-            ) : (
-              <View style={{ gap: spacing.sm, width: '100%' }}>
+
+              {user ? (
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() =>
-                    openWhatsAppConcierge(
-                      `Hello D&G Store! I just placed Direct Pay Order #${successOrder.id} (${formatRwf(successOrder.total)}) for delivery to ${successOrder.deliveryAddress || 'Kigali'}. Can you confirm dispatch?`,
-                    )
-                  }
-                  style={[styles.primaryButton, { backgroundColor: '#25D366' }]}
+                  onPress={() => navigation.navigate('Orders')}
+                  style={styles.primaryButton}
                 >
-                  <MessageCircle color={colors.white} size={18} />
-                  <Text style={[styles.primaryButtonText, { color: colors.white }]}>
-                    Confirm on WhatsApp  →
-                  </Text>
+                  <Text style={styles.primaryButtonText}>Track my order  →</Text>
                 </Pressable>
-
+              ) : (
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => navigation.navigate('Register')}
@@ -325,8 +332,8 @@ export function CheckoutScreen(): React.JSX.Element {
                     Create account to save future orders →
                   </Text>
                 </Pressable>
-              </View>
-            )}
+              )}
+            </View>
 
             <Pressable
               accessibilityRole="button"
