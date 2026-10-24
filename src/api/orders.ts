@@ -8,6 +8,9 @@ export async function createOrder(input: {
   paymentMethod: 'momo' | 'airtel' | 'card';
   promoCode?: string;
   paymentDetails?: string;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
 }): Promise<OrderResponse> {
   const response = await apiClient.post<OrderResponse>('/orders', input);
   return response.data;

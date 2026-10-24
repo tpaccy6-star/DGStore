@@ -17,8 +17,9 @@ const server = app.listen(0, '127.0.0.1', async () => {
   try {
     const products = await request('GET', '/products');
     assert.equal(products.status, 200);
-    assert.ok(products.body.length >= 2);
-    const [p1, p2] = products.body;
+    const inStock = products.body.filter(p => p.stock >= 5);
+    assert.ok(inStock.length >= 2);
+    const [p1, p2] = inStock;
 
     const loginOwner = await request('POST', '/auth/login', { email: 'owner@dgstore.rw', password: 'Owner123!' });
     assert.equal(loginOwner.status, 200);
@@ -94,7 +95,20 @@ const server = app.listen(0, '127.0.0.1', async () => {
     const markReadRes = await request('PATCH', `/admin/notifications/${targetNotif.id}/read`, null, loginOwner.body.token);
     assert.equal(markReadRes.status, 204);
 
-    console.log('Backend multi-item, ACID DB consistency & Admin Notifications tests PASSED successfully!');
+    // 9. Direct Pay test without an account (token = null)
+    const directPayRes = await request('POST', '/orders', {
+      items: [{ productId: p1.id, quantity: 1 }],
+      deliveryAddress: 'Direct Pay Kigali, Rwanda',
+      paymentMethod: 'momo',
+      paymentDetails: '0788999888',
+      customerName: 'Direct Guest',
+      customerPhone: '0788999888'
+    }, null);
+    assert.equal(directPayRes.status, 201);
+    assert.ok(directPayRes.body.id.startsWith('DG-'));
+    assert.equal(directPayRes.body.items[0].productId, p1.id);
+
+    console.log('Backend multi-item, ACID DB consistency, Admin Notifications & Direct Pay tests PASSED successfully!');
   } finally {
     server.close();
   }

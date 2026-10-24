@@ -5,13 +5,16 @@ import {
   Building2,
   CheckCircle2,
   CreditCard,
+  Mail,
   MapPin,
+  MessageCircle,
   Phone,
   Plus,
   ShoppingBag,
   Sparkles,
   Tag,
   Truck,
+  User,
   X,
 } from 'lucide-react-native';
 import {
@@ -37,6 +40,7 @@ import { cardShadow, colors, spacing } from '../theme';
 import { StoreHeader } from '../components/StoreHeader';
 import { getSavedDeliveryAddress } from '../store/deliveryStorage';
 import { getSavedPaymentInfo, type SavedPaymentInfo } from '../store/paymentStorage';
+import { openWhatsAppConcierge } from '../utils/concierge';
 
 type FormValues = { deliveryAddress: string };
 const schema = z.object({ deliveryAddress: z.string().trim().min(3) });
@@ -63,6 +67,10 @@ export function CheckoutScreen(): React.JSX.Element {
   const [promoCodeInput, setPromoCodeInput] = useState('');
   const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
   const [promoError, setPromoError] = useState('');
+
+  const [guestName, setGuestName] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
 
   const [serverError, setServerError] = useState('');
   const [successOrder, setSuccessOrder] = useState<OrderResponse | null>(null);
@@ -137,13 +145,25 @@ export function CheckoutScreen(): React.JSX.Element {
     }
     setServerError('');
 
+    if (!user) {
+      if (!guestName.trim()) {
+        setServerError('Please enter your full name for delivery.');
+        return;
+      }
+      if (!guestPhone.trim()) {
+        setServerError('Please enter your phone number so courier can reach you.');
+        return;
+      }
+    }
+
     let paymentDetails = '';
     if (paymentMethod === 'momo' || paymentMethod === 'airtel') {
-      if (!phoneInput.trim()) {
+      const activePhone = phoneInput.trim() || guestPhone.trim();
+      if (!activePhone) {
         setServerError(`Please enter your ${paymentMethod === 'momo' ? 'MTN' : 'Airtel'} phone number for payment.`);
         return;
       }
-      paymentDetails = phoneInput.trim();
+      paymentDetails = activePhone;
     } else {
       paymentDetails = bankInput ? `${bankInput} - ${accountInput}` : accountInput;
     }
@@ -158,6 +178,9 @@ export function CheckoutScreen(): React.JSX.Element {
         paymentMethod,
         promoCode: appliedPromo ?? undefined,
         paymentDetails: paymentDetails || undefined,
+        customerName: user ? user.name : guestName.trim(),
+        customerPhone: user ? undefined : guestPhone.trim(),
+        customerEmail: user ? user.email : (guestEmail.trim() || undefined),
       });
       dispatch(clearCart());
       setSuccessOrder(order);
@@ -165,28 +188,6 @@ export function CheckoutScreen(): React.JSX.Element {
       setServerError(i18n.t('checkoutError'));
     }
   };
-
-  if (!user) {
-    return (
-      <View style={styles.screen}>
-        <StoreHeader title="Checkout" showBack />
-        <View style={styles.center}>
-          <View style={styles.iconCircle}>
-            <ShoppingBag color={colors.goldDark} size={28} strokeWidth={1.8} />
-          </View>
-          <Text style={styles.title}>{i18n.t('checkoutTitle')}</Text>
-          <Text style={styles.subtitle}>{i18n.t('loginPrompt')}</Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => navigation.navigate('Login', { redirectTo: 'Checkout' })}
-            style={styles.primaryButton}
-          >
-            <Text style={styles.primaryButtonText}>{i18n.t('loginButton')}  →</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
 
   if (items.length === 0 && !successOrder) {
     return (
@@ -290,13 +291,42 @@ export function CheckoutScreen(): React.JSX.Element {
               </View>
             </View>
 
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => navigation.navigate('Orders')}
-              style={styles.primaryButton}
-            >
-              <Text style={styles.primaryButtonText}>Track my order  →</Text>
-            </Pressable>
+            {user ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => navigation.navigate('Orders')}
+                style={styles.primaryButton}
+              >
+                <Text style={styles.primaryButtonText}>Track my order  →</Text>
+              </Pressable>
+            ) : (
+              <View style={{ gap: spacing.sm, width: '100%' }}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() =>
+                    openWhatsAppConcierge(
+                      `Hello D&G Store! I just placed Direct Pay Order #${successOrder.id} (${formatRwf(successOrder.total)}) for delivery to ${successOrder.deliveryAddress || 'Kigali'}. Can you confirm dispatch?`,
+                    )
+                  }
+                  style={[styles.primaryButton, { backgroundColor: '#25D366' }]}
+                >
+                  <MessageCircle color={colors.white} size={18} />
+                  <Text style={[styles.primaryButtonText, { color: colors.white }]}>
+                    Confirm on WhatsApp  →
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => navigation.navigate('Register')}
+                  style={styles.guestRegisterPromptBtn}
+                >
+                  <Text style={styles.guestRegisterPromptText}>
+                    Create account to save future orders →
+                  </Text>
+                </Pressable>
+              </View>
+            )}
 
             <Pressable
               accessibilityRole="button"
@@ -321,6 +351,85 @@ export function CheckoutScreen(): React.JSX.Element {
           <Text style={styles.subtitle}>
             Complete your order with Rwanda mobile money, card, or promo code discount.
           </Text>
+
+          {/* Customer / Direct Pay Contact Information */}
+          {user ? (
+            <View style={styles.customerAccountBox}>
+              <View style={styles.customerAccountHeader}>
+                <View style={styles.customerAccountAvatar}>
+                  <User color={colors.goldDark} size={16} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.customerAccountName}>{user.name}</Text>
+                  <Text style={styles.customerAccountEmail}>{user.email}</Text>
+                </View>
+                <View style={styles.customerAccountBadge}>
+                  <Text style={styles.customerAccountBadgeText}>LOGGED IN</Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.directPayCard}>
+              <View style={styles.directPayHeader}>
+                <View style={styles.directPayBadge}>
+                  <Sparkles color={colors.goldDark} size={13} />
+                  <Text style={styles.directPayBadgeText}>DIRECT PAY · NO ACCOUNT NEEDED</Text>
+                </View>
+                <Pressable onPress={() => navigation.navigate('Login', { redirectTo: 'Checkout' })}>
+                  <Text style={styles.loginLinkText}>Sign in</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.directPaySubtitle}>
+                Pay directly with MoMo, Airtel or Card. Please provide your contact details for delivery.
+              </Text>
+
+              {/* Full Name */}
+              <Text style={styles.fieldLabel}>Your Full Name *</Text>
+              <View style={styles.directInputWrap}>
+                <User color={colors.goldDark} size={17} style={styles.inputIcon} />
+                <TextInput
+                  placeholder="e.g. Marie Claire Uwase"
+                  placeholderTextColor={colors.mutedLight}
+                  style={styles.directInput}
+                  value={guestName}
+                  onChangeText={setGuestName}
+                />
+              </View>
+
+              {/* Phone / WhatsApp */}
+              <Text style={styles.fieldLabel}>Phone / WhatsApp Number *</Text>
+              <View style={styles.directInputWrap}>
+                <Phone color={colors.goldDark} size={17} style={styles.inputIcon} />
+                <TextInput
+                  keyboardType="phone-pad"
+                  placeholder="e.g. 0788 123 456"
+                  placeholderTextColor={colors.mutedLight}
+                  style={styles.directInput}
+                  value={guestPhone}
+                  onChangeText={text => {
+                    setGuestPhone(text);
+                    if (!phoneInput) setPhoneInput(text);
+                  }}
+                />
+              </View>
+
+              {/* Optional Email */}
+              <Text style={styles.fieldLabel}>Email Address (Optional)</Text>
+              <View style={styles.directInputWrap}>
+                <Mail color={colors.goldDark} size={17} style={styles.inputIcon} />
+                <TextInput
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  placeholder="For digital invoice & receipt"
+                  placeholderTextColor={colors.mutedLight}
+                  style={styles.directInput}
+                  value={guestEmail}
+                  onChangeText={setGuestEmail}
+                />
+              </View>
+            </View>
+          )}
 
           {/* Order Items Review Section (Supports multiple items & inline adjustments) */}
           <View style={styles.orderItemsHeaderRow}>
@@ -1276,5 +1385,126 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     borderWidth: 1,
     flexDirection: 'row',
+  },
+  directPayCard: {
+    backgroundColor: '#FCFAF5',
+    borderColor: colors.goldMuted,
+    borderRadius: spacing.radius,
+    borderWidth: 1.5,
+    marginBottom: 16,
+    marginTop: 10,
+    padding: spacing.md,
+  },
+  directPayHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  directPayBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.goldLight,
+    borderColor: colors.goldMuted,
+    borderRadius: spacing.radiusPill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  directPayBadgeText: {
+    color: colors.goldDark,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  loginLinkText: {
+    color: colors.goldDark,
+    fontSize: 12,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  directPaySubtitle: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  fieldLabel: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
+    marginTop: 8,
+  },
+  directInputWrap: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: spacing.radiusSm,
+    borderWidth: 1,
+    flexDirection: 'row',
+    paddingHorizontal: 10,
+  },
+  directInput: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 14,
+    height: 42,
+    paddingLeft: 6,
+  },
+  customerAccountBox: {
+    backgroundColor: colors.paper,
+    borderColor: colors.lineLight,
+    borderRadius: spacing.radiusSm,
+    borderWidth: 1,
+    marginBottom: 14,
+    marginTop: 10,
+    padding: spacing.md,
+  },
+  customerAccountHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  customerAccountAvatar: {
+    alignItems: 'center',
+    backgroundColor: colors.goldLight,
+    borderRadius: 16,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  customerAccountName: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  customerAccountEmail: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  customerAccountBadge: {
+    backgroundColor: colors.cream,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  customerAccountBadgeText: {
+    color: colors.goldDark,
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  guestRegisterPromptBtn: {
+    alignItems: 'center',
+    borderColor: colors.goldMuted,
+    borderRadius: spacing.radiusSm,
+    borderWidth: 1,
+    paddingVertical: 10,
+  },
+  guestRegisterPromptText: {
+    color: colors.goldDark,
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

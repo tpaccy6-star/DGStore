@@ -20,6 +20,7 @@ function userFromRequest(req) {
   try { return jwt.verify(header.slice(7), jwtSecret); } catch { return null; }
 }
 function auth(req, res, next) { const user = userFromRequest(req); if (!user) return res.status(401).json({ message: 'Authentication required' }); req.user = user; next(); }
+function optionalAuth(req, _res, next) { req.user = userFromRequest(req); next(); }
 function ownerOnly(req, res, next) { if (req.user.role !== 'owner') return res.status(403).json({ message: 'Owner access required' }); next(); }
 function cartForUser(userId) {
   return db.prepare(`SELECT p.id, p.name, p.category, p.price, p.old_price AS oldPrice, p.rating, p.reviews, p.image, p.color, p.description, p.stock, p.is_active AS isActive, p.created_at AS createdAt, c.quantity FROM products p JOIN cart_items c ON c.product_id = p.id WHERE c.user_id = ? AND p.is_active = 1`).all(userId).map(item => ({ ...publicProduct(item), productId: item.id, quantity: item.quantity }));
@@ -160,10 +161,39 @@ app.post('/cart', auth, (req, res) => {
   res.json({ cart: Object.fromEntries(items.map(item => [item.productId, item.quantity])), items });
 });
 
-app.post('/orders', auth, (req, res) => {
-  const { items, deliveryAddress, paymentMethod, promoCode, paymentDetails } = req.body || {};
+app.post('/orders', optionalAuth, (req, res) => {
+  const { items, deliveryAddress, paymentMethod, promoCode, paymentDetails, customerName: rawCustomerName, customerPhone, customerEmail: rawCustomerEmail } = req.body || {};
   if (!Array.isArray(items) || !items.length || !deliveryAddress || !['momo', 'airtel', 'card'].includes(paymentMethod)) {
     return res.status(400).json({ message: 'Complete checkout details are required' });
+  }
+
+  // Support both authenticated customers and Direct Pay guest customers
+  let userId;
+  let customerName;
+  let customerEmail;
+  let isGuest = false;
+
+  if (req.user) {
+    userId = req.user.id;
+    customerName = req.user.name || 'Customer';
+    customerEmail = req.user.email;
+  } else {
+    isGuest = true;
+    customerName = String(rawCustomerName || 'Direct Pay Customer').trim();
+    const phoneClean = String(customerPhone || '').replace(/\D/g, '');
+    customerEmail = String(rawCustomerEmail || (phoneClean ? `${phoneClean}@guest.dgstore.rw` : `guest_${Date.now()}@guest.dgstore.rw`)).toLowerCase().trim();
+
+    let guestUser = db.prepare('SELECT id, name, email FROM users WHERE email = ?').get(customerEmail);
+    if (!guestUser) {
+      const insertGuest = db.prepare('INSERT INTO users (name, email, username, password_hash, role) VALUES (?, ?, ?, ?, ?)');
+      const res = insertGuest.run(customerName, customerEmail, null, bcrypt.hashSync('Guest123!', 10), 'customer');
+      userId = res.lastInsertRowid;
+    } else {
+      userId = guestUser.id;
+      if (customerName && customerName !== 'Direct Pay Customer') {
+        db.prepare('UPDATE users SET name = ? WHERE id = ?').run(customerName, userId);
+      }
+    }
   }
 
   // Consolidate multiple items with the same product ID
@@ -216,7 +246,7 @@ app.post('/orders', auth, (req, res) => {
     : paymentMethod;
 
   const create = db.transaction(() => {
-    db.prepare('INSERT INTO orders (id, user_id, total, tracking_number, delivery_address, payment_method) VALUES (?, ?, ?, ?, ?, ?)').run(id, req.user.id, total, `TRK-${crypto.randomBytes(3).toString('hex').toUpperCase()}`, deliveryAddress.trim(), recordedPaymentMethod);
+    db.prepare('INSERT INTO orders (id, user_id, total, tracking_number, delivery_address, payment_method) VALUES (?, ?, ?, ?, ?, ?)').run(id, userId, total, `TRK-${crypto.randomBytes(3).toString('hex').toUpperCase()}`, deliveryAddress.trim(), recordedPaymentMethod);
     const insert = db.prepare('INSERT INTO order_items (order_id, product_id, name, price, quantity) VALUES (?, ?, ?, ?, ?)');
     const update = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?');
     orderItems.forEach(item => {
@@ -226,19 +256,22 @@ app.post('/orders', auth, (req, res) => {
         throw new Error(`Insufficient stock available for ${item.name}`);
       }
     });
-    db.prepare('DELETE FROM cart_items WHERE user_id = ?').run(req.user.id);
+    if (req.user) {
+      db.prepare('DELETE FROM cart_items WHERE user_id = ?').run(req.user.id);
+    }
   });
 
   try {
     create();
 
-    const customerName = req.user.name || 'Customer';
     const notifTitle = `New Order #${id}`;
-    const notifMessage = `${customerName} placed an order of ${total.toLocaleString()} RWF (${orderItems.length} item${orderItems.length > 1 ? 's' : ''})`;
+    const notifMessage = `${customerName}${isGuest ? ' (Direct Pay)' : ''} placed an order of ${total.toLocaleString()} RWF (${orderItems.length} item${orderItems.length > 1 ? 's' : ''})`;
     const notifData = JSON.stringify({
       orderId: id,
       customerName,
-      customerEmail: req.user.email,
+      customerEmail,
+      customerPhone: customerPhone || undefined,
+      isGuest,
       total,
       itemsCount: orderItems.length,
       items: orderItems.map(i => `${i.name} (x${i.quantity})`),
@@ -254,7 +287,7 @@ app.post('/orders', auth, (req, res) => {
 
     if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
       try {
-        const tgText = `🔔 *D&G Store: New Order Received!*\n\n*Order ID:* \`${id}\`\n*Customer:* ${customerName}\n*Amount:* ${total.toLocaleString()} RWF\n*Payment:* ${recordedPaymentMethod}\n*Delivery:* ${deliveryAddress.trim()}\n\n*Items:*\n${orderItems.map(i => `• ${i.name} x${i.quantity} (${(i.price * i.quantity).toLocaleString()} RWF)`).join('\n')}`;
+        const tgText = `🔔 *D&G Store: New Order Received!*\n\n*Order ID:* \`${id}\`\n*Customer:* ${customerName}${isGuest ? ' (Direct Pay Guest)' : ''}\n*Amount:* ${total.toLocaleString()} RWF\n*Payment:* ${recordedPaymentMethod}\n*Delivery:* ${deliveryAddress.trim()}${customerPhone ? `\n*Phone:* ${customerPhone}` : ''}\n\n*Items:*\n${orderItems.map(i => `• ${i.name} x${i.quantity} (${(i.price * i.quantity).toLocaleString()} RWF)`).join('\n')}`;
         fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -269,7 +302,7 @@ app.post('/orders', auth, (req, res) => {
       }
     }
 
-    res.status(201).json(orderById(id, req.user.id));
+    res.status(201).json(orderById(id, userId));
   } catch (err) {
     res.status(400).json({ message: err.message || 'Could not complete order' });
   }
