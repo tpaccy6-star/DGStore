@@ -1,15 +1,16 @@
 {
-  "version": "0.0.2",
+  "version": "0.0.3",
   "minRequiredVersion": "0.0.1",
-  "title": "D&G Store v0.0.2 - Wishlist, Reviews & Concierge",
+  "title": "D&G Store v0.0.3 - Direct Pay & WhatsApp Alerts",
   "releaseDate": "2026-10-24",
   "features": [
-    "❤️ Wishlist & Saved Items: Save your favorite pieces to buy later",
-    "⭐ Customer Reviews & Ratings: Share and read authentic buyer feedback",
-    "💬 Boutique VIP Concierge: Direct WhatsApp & hotline consultation in Kigali",
-    "👤 Account Management: Update full name and change password",
-    "🔒 Password Recovery: Recover access with 6-digit verification code"
+    "⚡ Direct Pay / Guest Checkout: Instant Momo, Airtel & Card payment without account registration",
+    "🔔 Real-Time Owner Notifications: In-app live banner alert, sound chime, vibration & unread badge",
+    "💬 WhatsApp Direct Order Forwarding: 1-tap send order and receipt to store owner on WhatsApp",
+    "📱 Multi-Phone Order Alerts: Support for 0781343621 (MTN) and 0726705175 (Airtel) notifications",
+    "⚡ Instant Phone Lockscreen Alerts: Real-time ntfy.sh sound & vibration push alerts with zero waiting list",
+    "🤝 1-Tap Customer WhatsApp Chat: Store owner can chat with customers on WhatsApp directly from order cards"
   ],
-  "downloadUrl": "https://github.com/tpaccy6-star/DGStore/releases/download/v0.0.2/DGStore-Release.apk",
+  "downloadUrl": "https://github.com/tpaccy6-star/DGStore/releases/download/v0.0.3/DGStore-Release.apk",
   "forceUpdate": false
 }
