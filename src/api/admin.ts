@@ -19,3 +19,30 @@ export async function getAdminCustomers(): Promise<AdminCustomer[]> { return (aw
 export async function getAdminNotifications(): Promise<AdminNotificationsResponse> { return (await apiClient.get<AdminNotificationsResponse>('/admin/notifications')).data; }
 export async function markAdminNotificationRead(id: number): Promise<void> { await apiClient.patch(`/admin/notifications/${id}/read`); }
 export async function markAllAdminNotificationsRead(): Promise<void> { await apiClient.patch('/admin/notifications/read-all'); }
+
+export type WhatsAppSettings = {
+  phone: string;
+  apiKey: string;
+  webhookUrl: string;
+  enabled: boolean;
+};
+
+export async function getWhatsAppSettings(): Promise<WhatsAppSettings> {
+  return (await apiClient.get<WhatsAppSettings>('/admin/settings/whatsapp')).data;
+}
+
+export async function updateWhatsAppSettings(input: {
+  phone?: string;
+  apiKey?: string;
+  webhookUrl?: string;
+}): Promise<WhatsAppSettings> {
+  return (await apiClient.post<WhatsAppSettings>('/admin/settings/whatsapp', input)).data;
+}
+
+export async function testWhatsAppNotification(input?: {
+  phone?: string;
+  apiKey?: string;
+  webhookUrl?: string;
+}): Promise<{ message: string; success: boolean }> {
+  return (await apiClient.post<{ message: string; success: boolean }>('/admin/settings/whatsapp/test', input || {})).data;
+}

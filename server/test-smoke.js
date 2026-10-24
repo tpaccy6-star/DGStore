@@ -108,7 +108,30 @@ const server = app.listen(0, '127.0.0.1', async () => {
     assert.ok(directPayRes.body.id.startsWith('DG-'));
     assert.equal(directPayRes.body.items[0].productId, p1.id);
 
-    console.log('Backend multi-item, ACID DB consistency, Admin Notifications & Direct Pay tests PASSED successfully!');
+    // 10. WhatsApp settings retrieval
+    const waGetRes = await request('GET', '/admin/settings/whatsapp', null, loginOwner.body.token);
+    assert.equal(waGetRes.status, 200);
+    assert.equal(typeof waGetRes.body.enabled, 'boolean');
+
+    // 11. WhatsApp settings update
+    const waSaveRes = await request('POST', '/admin/settings/whatsapp', {
+      phone: '+250788123456',
+      apiKey: 'test_api_key_12345'
+    }, loginOwner.body.token);
+    assert.equal(waSaveRes.status, 200);
+    assert.equal(waSaveRes.body.phone, '+250788123456');
+    assert.equal(waSaveRes.body.apiKey, 'test_api_key_12345');
+    assert.equal(waSaveRes.body.enabled, true);
+
+    // 12. WhatsApp test endpoint validation without credentials
+    const waTestFail = await request('POST', '/admin/settings/whatsapp/test', {
+      phone: '',
+      apiKey: ''
+    }, loginOwner.body.token);
+    // Should respond with status 400 or test dispatched
+    assert.ok([200, 400].includes(waTestFail.status));
+
+    console.log('Backend multi-item, ACID DB consistency, Admin Notifications, Direct Pay & WhatsApp Alerts tests PASSED successfully!');
   } finally {
     server.close();
   }

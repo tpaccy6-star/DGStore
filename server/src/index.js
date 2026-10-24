@@ -1,9 +1,67 @@
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('./db');
+
+// Auto-load server/.env file if present
+const envPath = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envPath)) {
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const t = line.trim();
+    if (t && !t.startsWith('#') && t.includes('=')) {
+      const idx = t.indexOf('=');
+      const k = t.slice(0, idx).trim();
+      const v = t.slice(idx + 1).trim();
+      if (!process.env[k]) process.env[k] = v;
+    }
+  }
+}
+
+function getSetting(key, fallback = '') {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return (row && row.value) ? row.value : (process.env[key] || fallback);
+}
+function setSetting(key, value) {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, String(value ?? '').trim());
+}
+
+async function sendWhatsAppAlert({ phone, apiKey, webhookUrl, text, payload }) {
+  const cleanPhone = String(phone || '').replace(/\D/g, '');
+  let sent = false;
+
+  // 1. CallMeBot WhatsApp API (100% free personal WhatsApp bot)
+  if (cleanPhone && apiKey) {
+    try {
+      const waUrl = `https://api.callmebot.com/whatsapp.php?phone=${cleanPhone}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(apiKey)}`;
+      const response = await fetch(waUrl);
+      const respText = await response.text();
+      console.log(`[WhatsApp CallMeBot to ${cleanPhone}]: status=${response.status}, resp=${respText.slice(0, 100)}`);
+      sent = response.ok;
+    } catch (err) {
+      console.error('[WhatsApp CallMeBot Error]:', err.message);
+    }
+  }
+
+  // 2. Custom Webhook (optional for Zapier, n8n, UltraMsg, Twilio, etc.)
+  if (webhookUrl && webhookUrl.startsWith('http')) {
+    try {
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone, text, ...(payload || {}) })
+      });
+      sent = response.ok;
+    } catch (err) {
+      console.error('[WhatsApp Webhook Error]:', err.message);
+    }
+  }
+
+  return sent;
+}
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -302,6 +360,33 @@ app.post('/orders', optionalAuth, (req, res) => {
       }
     }
 
+    // Owner WhatsApp Order Alert Dispatch
+    const waPhone = getSetting('WHATSAPP_OWNER_PHONE');
+    const waApiKey = getSetting('WHATSAPP_API_KEY');
+    const waWebhook = getSetting('WHATSAPP_WEBHOOK_URL');
+
+    if ((waPhone && waApiKey) || waWebhook) {
+      const waText = `🛍️ *D&G Store: New Order Received!*\n\n*Order ID:* ${id}\n*Customer:* ${customerName}${isGuest ? ' (Direct Pay)' : ''}\n*Amount:* ${total.toLocaleString()} RWF\n*Payment:* ${recordedPaymentMethod}\n*Delivery:* ${deliveryAddress.trim()}${customerPhone ? `\n*Phone:* ${customerPhone}` : ''}\n\n*Items Ordered:*\n${orderItems.map(i => `• ${i.name} x${i.quantity} (${(i.price * i.quantity).toLocaleString()} RWF)`).join('\n')}\n\n👉 Open D&G Store Admin to manage this order.`;
+
+      sendWhatsAppAlert({
+        phone: waPhone,
+        apiKey: waApiKey,
+        webhookUrl: waWebhook,
+        text: waText,
+        payload: {
+          orderId: id,
+          customerName,
+          customerEmail,
+          customerPhone: customerPhone || undefined,
+          isGuest,
+          total,
+          items: orderItems,
+          deliveryAddress: deliveryAddress.trim(),
+          paymentMethod: recordedPaymentMethod
+        }
+      }).catch(err => console.error('[WhatsApp Order Dispatch Error]:', err.message));
+    }
+
     res.status(201).json(orderById(id, userId));
   } catch (err) {
     res.status(400).json({ message: err.message || 'Could not complete order' });
@@ -360,6 +445,63 @@ app.patch('/admin/notifications/:id/read', auth, ownerOnly, (req, res) => {
 app.patch('/admin/notifications/read-all', auth, ownerOnly, (_req, res) => {
   db.prepare('UPDATE admin_notifications SET is_read = 1').run();
   res.status(204).end();
+});
+
+// Admin WhatsApp Settings API
+app.get('/admin/settings/whatsapp', auth, ownerOnly, (_req, res) => {
+  const phone = getSetting('WHATSAPP_OWNER_PHONE');
+  const apiKey = getSetting('WHATSAPP_API_KEY');
+  const webhookUrl = getSetting('WHATSAPP_WEBHOOK_URL');
+  res.json({
+    phone,
+    apiKey,
+    webhookUrl,
+    enabled: Boolean((phone && apiKey) || webhookUrl)
+  });
+});
+
+app.post('/admin/settings/whatsapp', auth, ownerOnly, (req, res) => {
+  const { phone, apiKey, webhookUrl } = req.body || {};
+  if (phone !== undefined) setSetting('WHATSAPP_OWNER_PHONE', phone.trim());
+  if (apiKey !== undefined) setSetting('WHATSAPP_API_KEY', apiKey.trim());
+  if (webhookUrl !== undefined) setSetting('WHATSAPP_WEBHOOK_URL', webhookUrl.trim());
+
+  const savedPhone = getSetting('WHATSAPP_OWNER_PHONE');
+  const savedApiKey = getSetting('WHATSAPP_API_KEY');
+  const savedWebhook = getSetting('WHATSAPP_WEBHOOK_URL');
+
+  res.json({
+    message: 'WhatsApp notification settings saved successfully',
+    phone: savedPhone,
+    apiKey: savedApiKey,
+    webhookUrl: savedWebhook,
+    enabled: Boolean((savedPhone && savedApiKey) || savedWebhook)
+  });
+});
+
+app.post('/admin/settings/whatsapp/test', auth, ownerOnly, async (req, res) => {
+  const phone = req.body?.phone || getSetting('WHATSAPP_OWNER_PHONE');
+  const apiKey = req.body?.apiKey || getSetting('WHATSAPP_API_KEY');
+  const webhookUrl = req.body?.webhookUrl || getSetting('WHATSAPP_WEBHOOK_URL');
+
+  if (!((phone && apiKey) || webhookUrl)) {
+    return res.status(400).json({ message: 'Please provide WhatsApp Phone Number & API Key (or Webhook URL) to test.' });
+  }
+
+  const testText = `✅ *D&G Store WhatsApp Test*\n\nYour WhatsApp notifications are configured and working!\nYou will receive instant alerts on this number whenever a customer places an order on D&G Store.\n\n_Sent on ${new Date().toLocaleString()}_`;
+
+  try {
+    const success = await sendWhatsAppAlert({
+      phone,
+      apiKey,
+      webhookUrl,
+      text: testText,
+      payload: { test: true }
+    });
+    res.json({ message: 'Test message sent. Check your WhatsApp!', success });
+  } catch (err) {
+    res.status(500).json({ message: `Failed to dispatch test WhatsApp message: ${err.message}` });
+  }
 });
 
 app.use((error, _req, res, _next) => { console.error(error); res.status(500).json({ message: 'Unexpected server error' }); });

@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -22,7 +23,9 @@ import {
   ChevronDown,
   ChevronUp,
   Edit3,
+  ExternalLink,
   Filter,
+  MessageCircle,
   Package,
   Plus,
   Search,
@@ -44,10 +47,13 @@ import {
   getAdminOrders,
   getAdminProducts,
   getAdminStats,
+  getWhatsAppSettings,
   markAdminNotificationRead,
   markAllAdminNotificationsRead,
+  testWhatsAppNotification,
   updateAdminOrderStatus,
   updateAdminProduct,
+  updateWhatsAppSettings,
   type AdminCustomer,
   type AdminNotification,
   type AdminOrder,
@@ -102,6 +108,15 @@ export function AdminScreen(): React.JSX.Element {
   const [productCategoryFilter, setProductCategoryFilter] = useState('All');
   const [productSearch, setProductSearch] = useState('');
 
+  // WhatsApp Notification Settings State
+  const [waPhone, setWaPhone] = useState('');
+  const [waApiKey, setWaApiKey] = useState('');
+  const [waWebhookUrl, setWaWebhookUrl] = useState('');
+  const [waEnabled, setWaEnabled] = useState(false);
+  const [waSaving, setWaSaving] = useState(false);
+  const [waTesting, setWaTesting] = useState(false);
+  const [showAdvancedWa, setShowAdvancedWa] = useState(false);
+
   const [refreshing, setRefreshing] = useState(false);
   const [section, setSection] = useState<AdminSection>('Overview');
 
@@ -130,8 +145,9 @@ export function AdminScreen(): React.JSX.Element {
         getAdminProducts(),
         getAdminCustomers(),
         getAdminNotifications(),
+        getWhatsAppSettings(),
       ]);
-      const [nextStats, nextOrders, nextProducts, nextCustomers, nextNotifs] = results;
+      const [nextStats, nextOrders, nextProducts, nextCustomers, nextNotifs, nextWa] = results;
       if (nextStats.status === 'fulfilled') setStats(nextStats.value);
       if (nextOrders.status === 'fulfilled') setOrders(nextOrders.value);
       if (nextProducts.status === 'fulfilled') setProducts(nextProducts.value);
@@ -139,6 +155,12 @@ export function AdminScreen(): React.JSX.Element {
       if (nextNotifs.status === 'fulfilled') {
         setNotifications(nextNotifs.value.notifications || []);
         setUnreadNotifsCount(nextNotifs.value.unreadCount || 0);
+      }
+      if (nextWa.status === 'fulfilled') {
+        setWaPhone(nextWa.value.phone || '');
+        setWaApiKey(nextWa.value.apiKey || '');
+        setWaWebhookUrl(nextWa.value.webhookUrl || '');
+        setWaEnabled(Boolean(nextWa.value.enabled));
       }
       setError(results.every(result => result.status === 'rejected'));
     } catch {
@@ -148,6 +170,57 @@ export function AdminScreen(): React.JSX.Element {
       setRefreshing(false);
     }
   }, []);
+
+  async function saveWhatsApp() {
+    if (!waPhone.trim() && !waApiKey.trim() && !waWebhookUrl.trim()) {
+      Alert.alert('Configuration Required', 'Please enter your WhatsApp phone number and CallMeBot API key.');
+      return;
+    }
+    setWaSaving(true);
+    try {
+      const res = await updateWhatsAppSettings({
+        phone: waPhone.trim(),
+        apiKey: waApiKey.trim(),
+        webhookUrl: waWebhookUrl.trim(),
+      });
+      setWaPhone(res.phone || '');
+      setWaApiKey(res.apiKey || '');
+      setWaWebhookUrl(res.webhookUrl || '');
+      setWaEnabled(Boolean(res.enabled));
+      Alert.alert('WhatsApp Configured', 'Your WhatsApp notification settings have been saved successfully.');
+    } catch (err: any) {
+      Alert.alert('Save Failed', err?.response?.data?.message || 'Could not save WhatsApp settings');
+    } finally {
+      setWaSaving(false);
+    }
+  }
+
+  async function testWhatsApp() {
+    if (!waPhone.trim() || !waApiKey.trim()) {
+      Alert.alert('Missing Details', 'Please enter both your WhatsApp phone number and API key before testing.');
+      return;
+    }
+    setWaTesting(true);
+    try {
+      const res = await testWhatsAppNotification({
+        phone: waPhone.trim(),
+        apiKey: waApiKey.trim(),
+        webhookUrl: waWebhookUrl.trim(),
+      });
+      Alert.alert('Test Dispatched', res.message || 'Check your WhatsApp! A test message was sent.');
+    } catch (err: any) {
+      Alert.alert('Test Failed', err?.response?.data?.message || 'Failed to dispatch test WhatsApp message.');
+    } finally {
+      setWaTesting(false);
+    }
+  }
+
+  function openCallMeBotWhatsApp() {
+    const url = 'https://wa.me/34644442063?text=I+allow+callmebot+to+send+me+messages';
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Unable to open WhatsApp', 'Please save +34 644 44 20 63 in your phone contacts and send "I allow callmebot to send me messages" on WhatsApp.');
+    });
+  }
 
   async function markRead(id: number) {
     try {
@@ -638,20 +711,136 @@ export function AdminScreen(): React.JSX.Element {
               </View>
             )}
 
-            {/* Outbound Telegram / Push Setup Info Box */}
-            <View style={[styles.telegramGuideCard, cardShadow]}>
-              <View style={styles.telegramGuideHeader}>
-                <View style={styles.telegramIconWrap}>
-                  <Send color={colors.accent} size={16} strokeWidth={2} />
+            {/* WhatsApp Instant Order Alerts Setup Card */}
+            <View style={[styles.waAlertCard, cardShadow]}>
+              <View style={styles.waAlertHeader}>
+                <View style={styles.waIconWrap}>
+                  <MessageCircle color="#FFFFFF" size={18} strokeWidth={2.5} />
                 </View>
-                <Text style={styles.telegramGuideTitle}>Phone Alerts Outside the App</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.waAlertTitle}>WhatsApp Instant Order Alerts</Text>
+                  <Text style={styles.waAlertSubtitle}>Get new orders sent directly to your phone</Text>
+                </View>
+                <View style={[styles.waStatusBadge, waEnabled ? styles.waStatusBadgeActive : styles.waStatusBadgeInactive]}>
+                  {waEnabled ? (
+                    <>
+                      <Check color="#0F5132" size={12} strokeWidth={3} />
+                      <Text style={styles.waStatusBadgeTextActive}>Active</Text>
+                    </>
+                  ) : (
+                    <Text style={styles.waStatusBadgeTextInactive}>Not Configured</Text>
+                  )}
+                </View>
               </View>
-              <Text style={styles.telegramGuideText}>
-                Want to receive instant phone alerts on WhatsApp or Telegram when the app is closed?
-                The backend already supports automatic Telegram Bot dispatches. Set{' '}
-                <Text style={styles.codeHighlight}>TELEGRAM_BOT_TOKEN</Text> and{' '}
-                <Text style={styles.codeHighlight}>TELEGRAM_CHAT_ID</Text> in your server environment to receive alerts anywhere!
+
+              <Text style={styles.waExplainerText}>
+                Receive a direct WhatsApp alert on your personal phone with complete order details (customer name, items, delivery address, and amount) as soon as an order is placed.
               </Text>
+
+              {/* 30-Second Setup Guide */}
+              <View style={styles.waGuideBox}>
+                <Text style={styles.waGuideTitle}>⚡ 30-Second Free Setup (CallMeBot):</Text>
+                <Text style={styles.waStepText}>
+                  <Text style={styles.waStepNum}>1. </Text>Open WhatsApp & message CallMeBot to get your free personal API key:
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={openCallMeBotWhatsApp}
+                  style={styles.waOpenBotBtn}
+                >
+                  <MessageCircle color="#075E54" size={15} strokeWidth={2.5} />
+                  <Text style={styles.waOpenBotBtnText}>Open CallMeBot on WhatsApp</Text>
+                  <ExternalLink color="#075E54" size={13} />
+                </Pressable>
+                <Text style={styles.waStepText}>
+                  <Text style={styles.waStepNum}>2. </Text>Send: <Text style={styles.waCodeText}>I allow callmebot to send me messages</Text>
+                </Text>
+                <Text style={styles.waStepText}>
+                  <Text style={styles.waStepNum}>3. </Text>CallMeBot will reply with your API key. Paste your phone number and key below.
+                </Text>
+              </View>
+
+              {/* Input: Owner Phone */}
+              <Text style={styles.waInputLabel}>Your WhatsApp Phone Number (with Country Code) *</Text>
+              <TextInput
+                keyboardType="phone-pad"
+                onChangeText={setWaPhone}
+                placeholder="e.g. +250 788 123 456"
+                placeholderTextColor={colors.mutedLight}
+                style={styles.waInput}
+                value={waPhone}
+              />
+
+              {/* Input: API Key */}
+              <Text style={styles.waInputLabel}>CallMeBot API Key *</Text>
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={setWaApiKey}
+                placeholder="e.g. 123456"
+                placeholderTextColor={colors.mutedLight}
+                style={styles.waInput}
+                value={waApiKey}
+              />
+
+              {/* Advanced Custom Webhook Toggle */}
+              <Pressable
+                onPress={() => setShowAdvancedWa(prev => !prev)}
+                style={styles.waAdvancedToggle}
+              >
+                <Text style={styles.waAdvancedToggleText}>
+                  {showAdvancedWa ? '▾ Hide Advanced Webhook' : '▸ Custom Webhook URL (Twilio, Zapier, Make, n8n)'}
+                </Text>
+              </Pressable>
+
+              {showAdvancedWa && (
+                <View style={styles.waAdvancedContainer}>
+                  <Text style={styles.waInputLabel}>Custom Webhook Endpoint URL (Optional)</Text>
+                  <TextInput
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    onChangeText={setWaWebhookUrl}
+                    placeholder="https://your-custom-webhook.com/order-alert"
+                    placeholderTextColor={colors.mutedLight}
+                    style={styles.waInput}
+                    value={waWebhookUrl}
+                  />
+                </View>
+              )}
+
+              {/* Action Buttons */}
+              <View style={styles.waBtnRow}>
+                <Pressable
+                  disabled={waSaving}
+                  onPress={saveWhatsApp}
+                  style={[styles.waSaveBtn, waSaving && styles.btnDisabled]}
+                >
+                  {waSaving ? (
+                    <ActivityIndicator color={colors.white} size="small" />
+                  ) : (
+                    <>
+                      <Check color={colors.white} size={15} strokeWidth={2.5} />
+                      <Text style={styles.waSaveBtnText}>Save WhatsApp</Text>
+                    </>
+                  )}
+                </Pressable>
+
+                <Pressable
+                  disabled={waTesting}
+                  onPress={testWhatsApp}
+                  style={[styles.waTestBtn, waTesting && styles.btnDisabled]}
+                >
+                  {waTesting ? (
+                    <ActivityIndicator color="#075E54" size="small" />
+                  ) : (
+                    <>
+                      <Send color="#075E54" size={14} strokeWidth={2.5} />
+                      <Text style={styles.waTestBtnText}>Test Message</Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
             </View>
           </View>
         )}
@@ -1954,5 +2143,188 @@ const styles = StyleSheet.create({
     color: '#0E3A12',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '700',
+  },
+  waAlertCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#CDE5D4',
+    borderRadius: spacing.radius,
+    borderWidth: 1.5,
+    marginBottom: spacing.xl,
+    padding: spacing.md,
+  },
+  waAlertHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: spacing.sm,
+  },
+  waIconWrap: {
+    alignItems: 'center',
+    backgroundColor: '#25D366',
+    borderRadius: 17,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  waAlertTitle: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  waAlertSubtitle: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  waStatusBadge: {
+    alignItems: 'center',
+    borderRadius: 12,
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  waStatusBadgeActive: {
+    backgroundColor: '#D1E7DD',
+    borderColor: '#A3CFBB',
+    borderWidth: 1,
+  },
+  waStatusBadgeInactive: {
+    backgroundColor: '#FFF3CD',
+    borderColor: '#FFE69C',
+    borderWidth: 1,
+  },
+  waStatusBadgeTextActive: {
+    color: '#0F5132',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  waStatusBadgeTextInactive: {
+    color: '#664D03',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  waExplainerText: {
+    color: colors.inkLight,
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginBottom: spacing.sm,
+  },
+  waGuideBox: {
+    backgroundColor: '#F0FBF4',
+    borderColor: '#D0EED9',
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: spacing.md,
+    padding: spacing.sm,
+  },
+  waGuideTitle: {
+    color: '#1B5E20',
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  waStepText: {
+    color: '#2E7D32',
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 4,
+  },
+  waStepNum: {
+    color: '#1B5E20',
+    fontWeight: '800',
+  },
+  waCodeText: {
+    backgroundColor: '#E8F5E9',
+    color: '#0D5302',
+    fontWeight: '700',
+    paddingHorizontal: 4,
+  },
+  waOpenBotBtn: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#DCF8C6',
+    borderColor: '#25D366',
+    borderRadius: 6,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    marginVertical: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  waOpenBotBtnText: {
+    color: '#075E54',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  waInputLabel: {
+    color: colors.ink,
+    fontSize: 11.5,
+    fontWeight: '700',
+    marginBottom: 4,
+    marginTop: 8,
+  },
+  waInput: {
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: 8,
+    borderWidth: 1,
+    color: colors.ink,
+    fontSize: 13,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  waAdvancedToggle: {
+    marginTop: 8,
+    paddingVertical: 4,
+  },
+  waAdvancedToggleText: {
+    color: colors.muted,
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  waAdvancedContainer: {
+    marginTop: 4,
+  },
+  waBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: spacing.md,
+  },
+  waSaveBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: 8,
+    flex: 1.4,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  waSaveBtnText: {
+    color: colors.white,
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  waTestBtn: {
+    alignItems: 'center',
+    backgroundColor: '#DCF8C6',
+    borderColor: '#25D366',
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 5,
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  waTestBtnText: {
+    color: '#075E54',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  btnDisabled: {
+    opacity: 0.6,
   },
 });

@@ -81,6 +81,10 @@ db.exec(`
     is_read INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
 
 const owner = db.prepare('SELECT id FROM users WHERE email = ?').get('owner@dgstore.rw');
