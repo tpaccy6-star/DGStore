@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "minRequiredVersion": "0.0.1",
+  "title": "Welcome to D&G Store",
+  "releaseDate": "2026-10-24",
+  "features": [
+    "Luxury fashion boutique catalog",
+    "Instant cart and checkout experience",
+    "Multi-language support (English, Français, Ikinyarwanda)",
+    "Real-time order tracking"
+  ],
+  "downloadUrl": "https://github.com/tpaccy6-star/DGStore/releases/latest",
+  "forceUpdate": false
+}

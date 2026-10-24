@@ -5,7 +5,7 @@
  * @format
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { ActivityIndicator, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -13,14 +13,30 @@ import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { BrandLogo } from './src/components/BrandLogo';
+import { UpdateModal } from './src/components/UpdateModal';
 import { colors, spacing } from './src/theme';
 import { persistor, store } from './src/store';
 import { getSavedServerUrl } from './src/store/serverStorage';
+import { checkForAppUpdates, UpdateInfo } from './src/services/updateService';
 
 function App(): React.JSX.Element {
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [isMandatory, setIsMandatory] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+
   useEffect(() => {
     getSavedServerUrl().catch(() => undefined);
+
+    // Check for updates automatically on app startup
+    checkForAppUpdates().then(result => {
+      if (result.hasUpdate && result.updateInfo) {
+        setUpdateInfo(result.updateInfo);
+        setIsMandatory(result.isMandatory);
+        setShowUpdateModal(true);
+      }
+    });
   }, []);
+
   return (
     <Provider store={store}>
       <PersistGate loading={<LoadingFallback />} persistor={persistor}>
@@ -29,6 +45,12 @@ function App(): React.JSX.Element {
           <NavigationContainer>
             <RootNavigator />
           </NavigationContainer>
+          <UpdateModal
+            visible={showUpdateModal}
+            updateInfo={updateInfo}
+            isMandatory={isMandatory}
+            onDismiss={() => setShowUpdateModal(false)}
+          />
         </SafeAreaProvider>
       </PersistGate>
     </Provider>
