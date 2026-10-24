@@ -23,26 +23,52 @@ if (fs.existsSync(envPath)) {
 
 function getSetting(key, fallback = '') {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
-  return (row && row.value) ? row.value : (process.env[key] || fallback);
+  if (row && row.value) return row.value;
+  if (process.env[key]) return process.env[key];
+  if (key === 'WHATSAPP_OWNER_PHONE') return '+250781343621, +250726705175';
+  if (key === 'NTFY_TOPIC') return 'dgstore-alerts-kigali';
+  return fallback;
 }
 function setSetting(key, value) {
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, String(value ?? '').trim());
 }
 
-async function sendWhatsAppAlert({ phone, apiKey, webhookUrl, text, payload }) {
-  const cleanPhone = String(phone || '').replace(/\D/g, '');
-  let sent = false;
+function parseRwandaPhones(input) {
+  if (!input) return [];
+  const parts = String(input).split(/[,;|\/\s]+|(?:\bor\b)|(?:\band\b)/i).map(s => s.trim()).filter(Boolean);
+  const results = [];
+  for (const part of parts) {
+    let digits = part.replace(/\D/g, '');
+    if (!digits) continue;
+    // Rwanda format: 0781343621 -> 250781343621
+    if (digits.startsWith('07') && digits.length === 10) {
+      digits = `250${digits.slice(1)}`;
+    } else if (digits.startsWith('7') && digits.length === 9) {
+      digits = `250${digits}`;
+    }
+    if (digits.length >= 9 && !results.includes(digits)) {
+      results.push(digits);
+    }
+  }
+  return results;
+}
 
-  // 1. CallMeBot WhatsApp API (100% free personal WhatsApp bot)
-  if (cleanPhone && apiKey) {
-    try {
-      const waUrl = `https://api.callmebot.com/whatsapp.php?phone=${cleanPhone}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(apiKey)}`;
-      const response = await fetch(waUrl);
-      const respText = await response.text();
-      console.log(`[WhatsApp CallMeBot to ${cleanPhone}]: status=${response.status}, resp=${respText.slice(0, 100)}`);
-      sent = response.ok;
-    } catch (err) {
-      console.error('[WhatsApp CallMeBot Error]:', err.message);
+async function sendWhatsAppAlert({ phone, apiKey, webhookUrl, text, payload }) {
+  const phones = parseRwandaPhones(phone);
+  let anySent = false;
+
+  // 1. CallMeBot WhatsApp API (100% free personal WhatsApp bot - sends to all configured numbers)
+  if (apiKey && phones.length > 0) {
+    for (const p of phones) {
+      try {
+        const waUrl = `https://api.callmebot.com/whatsapp.php?phone=${p}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(apiKey)}`;
+        const response = await fetch(waUrl);
+        const respText = await response.text();
+        console.log(`[WhatsApp CallMeBot to ${p}]: status=${response.status}, resp=${respText.slice(0, 100)}`);
+        if (response.ok) anySent = true;
+      } catch (err) {
+        console.error(`[WhatsApp CallMeBot Error to ${p}]:`, err.message);
+      }
     }
   }
 
@@ -52,15 +78,15 @@ async function sendWhatsAppAlert({ phone, apiKey, webhookUrl, text, payload }) {
       const response = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: cleanPhone, text, ...(payload || {}) })
+        body: JSON.stringify({ phones, phone: phones[0] || '', text, ...(payload || {}) })
       });
-      sent = response.ok;
+      if (response.ok) anySent = true;
     } catch (err) {
       console.error('[WhatsApp Webhook Error]:', err.message);
     }
   }
 
-  return sent;
+  return anySent;
 }
 
 const app = express();
@@ -394,9 +420,9 @@ app.post('/orders', optionalAuth, (req, res) => {
         fetch(`https://ntfy.sh/${encodeURIComponent(ntfyTopic.trim())}`, {
           method: 'POST',
           headers: {
-            'Title': `🔔 DGStore: New Order #${id} (${total.toLocaleString()} RWF)`,
+            'Title': `DGStore: New Order #${id} (${total.toLocaleString()} RWF)`,
             'Priority': 'urgent',
-            'Tags': 'shopping_bags,moneybag'
+            'Tags': 'shopping_bags,moneybag,bell'
           },
           body: `Customer: ${customerName}${isGuest ? ' (Direct Pay)' : ''}\nTotal: ${total.toLocaleString()} RWF\nDelivery: ${deliveryAddress.trim()}${customerPhone ? `\nPhone: ${customerPhone}` : ''}\n\nItems:\n${orderItems.map(i => `• ${i.name} x${i.quantity}`).join('\n')}`
         }).catch(err => console.error('[ntfy Push Error]:', err.message));
@@ -536,7 +562,7 @@ app.post('/admin/settings/whatsapp/test', auth, ownerOnly, async (req, res) => {
       await fetch(`https://ntfy.sh/${encodeURIComponent(ntfyTopic.trim())}`, {
         method: 'POST',
         headers: {
-          'Title': '✅ DGStore Alert Test',
+          'Title': 'DGStore Alert Test',
           'Priority': 'default',
           'Tags': 'white_check_mark,bell'
         },

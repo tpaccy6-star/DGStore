@@ -94,6 +94,11 @@ if (!owner) {
   insertUser.run('Aline Student', 'student@dgstore.rw', 'aline', bcrypt.hashSync('Student123!', 10), 'customer');
 }
 
+const defaultPhoneSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('WHATSAPP_OWNER_PHONE');
+if (!defaultPhoneSetting) {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('WHATSAPP_OWNER_PHONE', '+250781343621, +250726705175');
+}
+
 if (db.prepare('SELECT COUNT(*) AS count FROM products').get().count === 0) {
   const products = [
     ['Aero Runner', 'Shoes', 48500, 56000, 4.8, 124, 'https://images.unsplash.com/photo-1648818283312-0ef710ca1aae?auto=format&fit=crop&w=900&q=85', 'Sand', 'An everyday runner built for movement, with breathable panels and a lightweight cushioned sole.', 24],

@@ -810,10 +810,42 @@ export function AdminScreen(): React.JSX.Element {
 
               {/* Input: Owner Phone */}
               <Text style={styles.waInputLabel}>Your WhatsApp Phone Number (with Country Code) *</Text>
+              
+              {/* Quick Preset Chips for Owner's Numbers */}
+              <View style={styles.quickPhoneChipRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setWaPhone('+250781343621')}
+                  style={[styles.quickPhoneChip, waPhone.includes('781343621') && !waPhone.includes('726705175') && styles.quickPhoneChipActive]}
+                >
+                  <Text style={[styles.quickPhoneChipText, waPhone.includes('781343621') && !waPhone.includes('726705175') && styles.quickPhoneChipTextActive]}>
+                    0781343621 (MTN)
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setWaPhone('+250726705175')}
+                  style={[styles.quickPhoneChip, waPhone.includes('726705175') && !waPhone.includes('781343621') && styles.quickPhoneChipActive]}
+                >
+                  <Text style={[styles.quickPhoneChipText, waPhone.includes('726705175') && !waPhone.includes('781343621') && styles.quickPhoneChipTextActive]}>
+                    0726705175 (Airtel)
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setWaPhone('+250781343621, +250726705175')}
+                  style={[styles.quickPhoneChip, waPhone.includes('781343621') && waPhone.includes('726705175') && styles.quickPhoneChipActive]}
+                >
+                  <Text style={[styles.quickPhoneChipText, waPhone.includes('781343621') && waPhone.includes('726705175') && styles.quickPhoneChipTextActive]}>
+                    ✓ Both Numbers
+                  </Text>
+                </Pressable>
+              </View>
+
               <TextInput
                 keyboardType="phone-pad"
                 onChangeText={setWaPhone}
-                placeholder="e.g. +250 788 123 456"
+                placeholder="e.g. +250781343621, +250726705175"
                 placeholderTextColor={colors.mutedLight}
                 style={styles.waInput}
                 value={waPhone}
@@ -2464,5 +2496,32 @@ const styles = StyleSheet.create({
     color: '#075E54',
     fontSize: 11,
     fontWeight: '700',
+  },
+  quickPhoneChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 6,
+  },
+  quickPhoneChip: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#E5E7EB',
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  quickPhoneChipActive: {
+    backgroundColor: '#DCF8C6',
+    borderColor: '#25D366',
+  },
+  quickPhoneChipText: {
+    color: colors.inkLight,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  quickPhoneChipTextActive: {
+    color: '#075E54',
+    fontWeight: '800',
   },
 });
