@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Bell, Heart, ChevronLeft, ShoppingBag } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -45,126 +45,162 @@ export function StoreHeader({ title, showBack = false, onCart, hideBrand = false
     };
   }, [isOwner]);
 
+  const topInset = Math.max(insets.top, 8);
+
   return (
     <View
       style={[
         styles.header,
         {
-          paddingTop: Math.max(insets.top, 8),
-          height: 60 + Math.max(insets.top, 8),
+          paddingTop: topInset,
+          height: 58 + topInset,
         },
       ]}
     >
       <View style={styles.left}>
         {showBack && (
-          <Pressable
+          <TouchableOpacity
             accessibilityLabel="Go back"
             accessibilityRole="button"
+            activeOpacity={0.6}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             onPress={() => navigation.goBack()}
-            style={styles.iconButton}
+            style={styles.backButton}
           >
-            <ChevronLeft color={colors.ink} size={24} strokeWidth={2} />
-          </Pressable>
+            <ChevronLeft color={colors.ink} size={24} strokeWidth={2.2} />
+          </TouchableOpacity>
         )}
-        {!hideBrand && <BrandLogo size="sm" />}
-        {title && (
-          <View style={styles.titleWrap}>
-            {!hideBrand && <View style={styles.dot} />}
-            <Text style={styles.title} numberOfLines={1}>
-              {title}
-            </Text>
-          </View>
+
+        {showBack ? (
+          title ? (
+            <View style={styles.titleWrap}>
+              <Text style={styles.title} numberOfLines={1} ellipsizeMode="tail">
+                {title}
+              </Text>
+            </View>
+          ) : null
+        ) : (
+          <>
+            {!hideBrand && (
+              <TouchableOpacity
+                accessibilityLabel="D&G Store Home"
+                accessibilityRole="button"
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate('Home')}
+              >
+                <BrandLogo size="sm" />
+              </TouchableOpacity>
+            )}
+            {title && (
+              <View style={styles.titleWrap}>
+                {!hideBrand && <View style={styles.dot} />}
+                <Text style={styles.title} numberOfLines={1} ellipsizeMode="tail">
+                  {title}
+                </Text>
+              </View>
+            )}
+          </>
         )}
       </View>
 
       <View style={styles.rightActions}>
         {isOwner && (
-          <Pressable
+          <TouchableOpacity
             accessibilityLabel="Owner notifications"
             accessibilityRole="button"
+            activeOpacity={0.6}
+            hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
             onPress={() => navigation.navigate('Admin', { initialSection: 'Notifications' })}
             style={styles.iconButton}
           >
-            <View style={styles.cartIconWrapper}>
+            <View style={styles.iconWrapper}>
               <Bell
                 color={unreadNotifs > 0 ? colors.accent : colors.ink}
-                size={21}
+                size={20}
                 strokeWidth={2}
               />
               {unreadNotifs > 0 && (
-                <View style={[styles.badge, styles.notifBadge]}>
+                <View pointerEvents="none" style={[styles.badge, styles.notifBadge]}>
                   <Text style={styles.badgeText}>{unreadNotifs > 99 ? '99+' : unreadNotifs}</Text>
                 </View>
               )}
             </View>
-          </Pressable>
+          </TouchableOpacity>
         )}
 
-        <Pressable
+        <TouchableOpacity
           accessibilityLabel="Saved items wishlist"
           accessibilityRole="button"
+          activeOpacity={0.6}
+          hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
           onPress={() => navigation.navigate('Wishlist')}
           style={styles.iconButton}
         >
-          <View style={styles.cartIconWrapper}>
+          <View style={styles.iconWrapper}>
             <Heart
               color={wishlistCount > 0 ? colors.accent : colors.ink}
               fill={wishlistCount > 0 ? colors.goldLight : 'transparent'}
-              size={21}
+              size={20}
               strokeWidth={2}
             />
             {wishlistCount > 0 && (
-              <View style={[styles.badge, styles.wishlistBadge]}>
+              <View pointerEvents="none" style={[styles.badge, styles.wishlistBadge]}>
                 <Text style={styles.badgeText}>{wishlistCount > 99 ? '99+' : wishlistCount}</Text>
               </View>
             )}
           </View>
-        </Pressable>
+        </TouchableOpacity>
 
-        <Pressable
+        <TouchableOpacity
           accessibilityLabel="Open cart"
           accessibilityRole="button"
+          activeOpacity={0.6}
+          hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
           onPress={onCart ?? (() => navigation.navigate('Cart'))}
           style={styles.iconButton}
         >
-          <View style={styles.cartIconWrapper}>
-            <ShoppingBag color={colors.ink} size={22} strokeWidth={2} />
+          <View style={styles.iconWrapper}>
+            <ShoppingBag color={colors.ink} size={20} strokeWidth={2} />
             {count > 0 && (
-              <View style={styles.badge}>
+              <View pointerEvents="none" style={styles.badge}>
                 <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
               </View>
             )}
           </View>
-        </Pressable>
+        </TouchableOpacity>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  backButton: {
+    alignItems: 'center',
+    borderRadius: 20,
+    height: 40,
+    justifyContent: 'center',
+    marginRight: 4,
+    width: 40,
+  },
   badge: {
     alignItems: 'center',
     backgroundColor: colors.gold,
     borderColor: colors.paper,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1.5,
-    height: 18,
+    height: 16,
     justifyContent: 'center',
-    minWidth: 18,
-    paddingHorizontal: 4,
+    minWidth: 16,
+    paddingHorizontal: 3,
     position: 'absolute',
-    right: -7,
-    top: -5,
+    right: -4,
+    top: -3,
   },
   badgeText: {
     color: colors.white,
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '900',
-  },
-  cartIconWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
+    lineHeight: 10,
   },
   dot: {
     backgroundColor: colors.mutedLight,
@@ -178,41 +214,55 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper,
     borderBottomColor: colors.lineLight,
     borderBottomWidth: 1,
+    elevation: 4,
     flexDirection: 'row',
-    height: 64,
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.page,
+    paddingHorizontal: 12,
+    zIndex: 100,
   },
   iconButton: {
     alignItems: 'center',
-    borderRadius: 22,
-    height: 44,
+    borderRadius: 19,
+    height: 38,
     justifyContent: 'center',
-    minWidth: 44,
+    width: 38,
+  },
+  iconWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
   },
   left: {
     alignItems: 'center',
+    flex: 1,
     flexDirection: 'row',
+    flexShrink: 1,
+    marginRight: 8,
+    minWidth: 0,
+  },
+  notifBadge: {
+    backgroundColor: colors.danger,
+  },
+  rightActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexShrink: 0,
+    gap: 2,
   },
   title: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   titleWrap: {
     alignItems: 'center',
+    flex: 1,
     flexDirection: 'row',
-  },
-  rightActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 2,
+    flexShrink: 1,
+    minWidth: 0,
   },
   wishlistBadge: {
     backgroundColor: colors.ink,
-  },
-  notifBadge: {
-    backgroundColor: colors.danger,
   },
 });
