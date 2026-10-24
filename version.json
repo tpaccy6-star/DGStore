@@ -1,14 +1,15 @@
 {
-  "version": "0.0.1",
+  "version": "0.0.2",
   "minRequiredVersion": "0.0.1",
-  "title": "Welcome to D&G Store",
+  "title": "D&G Store v0.0.2 - Wishlist, Reviews & Concierge",
   "releaseDate": "2026-10-24",
   "features": [
-    "Luxury fashion boutique catalog",
-    "Instant cart and checkout experience",
-    "Multi-language support (English, Français, Ikinyarwanda)",
-    "Real-time order tracking"
+    "❤️ Wishlist & Saved Items: Save your favorite pieces to buy later",
+    "⭐ Customer Reviews & Ratings: Share and read authentic buyer feedback",
+    "💬 Boutique VIP Concierge: Direct WhatsApp & hotline consultation in Kigali",
+    "👤 Account Management: Update full name and change password",
+    "🔒 Password Recovery: Recover access with 6-digit verification code"
   ],
-  "downloadUrl": "https://github.com/tpaccy6-star/DGStore/releases/latest/download/DGStore-Release.apk",
+  "downloadUrl": "https://github.com/tpaccy6-star/DGStore/releases/download/v0.0.2/DGStore-Release.apk",
   "forceUpdate": false
 }
