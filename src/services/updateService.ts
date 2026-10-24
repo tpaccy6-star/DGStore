@@ -1,6 +1,8 @@
 import axios from 'axios';
+import * as Keychain from 'react-native-keychain';
+import packageJson from '../../package.json';
 
-export const CURRENT_APP_VERSION = '0.0.2';
+export const CURRENT_APP_VERSION = packageJson.version;
 
 // GitHub repository info
 const GITHUB_OWNER = 'tpaccy6-star';
@@ -10,6 +12,8 @@ const GITHUB_REPO = 'DGStore';
 const RAW_VERSION_URL = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/main/version.json`;
 // GitHub Releases API as automatic fallback
 const RELEASES_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
+
+const UPDATE_DISMISS_SERVICE = 'com.dgstore.dismissed_update';
 
 export interface UpdateInfo {
   version: string;
@@ -25,6 +29,32 @@ export interface UpdateCheckResult {
   hasUpdate: boolean;
   isMandatory: boolean;
   updateInfo: UpdateInfo | null;
+}
+
+/**
+ * Retrieve the version string the user previously dismissed
+ */
+export async function getDismissedUpdateVersion(): Promise<string | null> {
+  try {
+    const creds = await Keychain.getGenericPassword({ service: UPDATE_DISMISS_SERVICE });
+    if (creds && creds.password) {
+      return creds.password;
+    }
+  } catch {
+    // Ignore
+  }
+  return null;
+}
+
+/**
+ * Record a version as dismissed so optional updates don't spam on every app launch
+ */
+export async function setDismissedUpdateVersion(version: string): Promise<void> {
+  try {
+    await Keychain.setGenericPassword('dismissed_version', version, { service: UPDATE_DISMISS_SERVICE });
+  } catch {
+    // Ignore
+  }
 }
 
 /**
@@ -50,27 +80,42 @@ export function compareVersions(v1: string, v2: string): number {
 
 /**
  * Check for updates from GitHub (Fastly CDN raw JSON with fallback to Releases API)
+ * @param ignoreDismissed if true, checks regardless of previous user dismissal
  */
-export async function checkForAppUpdates(): Promise<UpdateCheckResult> {
+export async function checkForAppUpdates(ignoreDismissed = false): Promise<UpdateCheckResult> {
   try {
-    // 1. Try raw version.json from GitHub main branch (fast, no rate-limits)
+    // 1. Try raw version.json from GitHub main branch with cache-buster
     try {
-      const res = await axios.get<UpdateInfo>(RAW_VERSION_URL, {
+      const cacheBustUrl = `${RAW_VERSION_URL}?_t=${Date.now()}`;
+      const res = await axios.get<UpdateInfo>(cacheBustUrl, {
         timeout: 5000,
-        headers: { 'Cache-Control': 'no-cache' },
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', Pragma: 'no-cache' },
       });
 
       if (res.data && res.data.version) {
         const remoteVersion = res.data.version;
         const hasUpdate = compareVersions(remoteVersion, CURRENT_APP_VERSION) > 0;
         const isMandatory =
-          res.data.forceUpdate ||
-          (res.data.minRequiredVersion &&
-            compareVersions(res.data.minRequiredVersion, CURRENT_APP_VERSION) > 0);
+          Boolean(res.data.forceUpdate) ||
+          Boolean(
+            res.data.minRequiredVersion &&
+              compareVersions(res.data.minRequiredVersion, CURRENT_APP_VERSION) > 0,
+          );
+
+        if (hasUpdate && !isMandatory && !ignoreDismissed) {
+          const dismissedVersion = await getDismissedUpdateVersion();
+          if (dismissedVersion === remoteVersion) {
+            return {
+              hasUpdate: false,
+              isMandatory: false,
+              updateInfo: null,
+            };
+          }
+        }
 
         return {
           hasUpdate,
-          isMandatory: !!isMandatory,
+          isMandatory,
           updateInfo: hasUpdate ? res.data : null,
         };
       }
@@ -79,12 +124,26 @@ export async function checkForAppUpdates(): Promise<UpdateCheckResult> {
     }
 
     // 2. Fallback: Check latest GitHub Release API
-    const releaseRes = await axios.get(RELEASES_API_URL, { timeout: 5000 });
+    const releaseRes = await axios.get(RELEASES_API_URL, {
+      timeout: 5000,
+      headers: { 'Cache-Control': 'no-cache' },
+    });
     const release = releaseRes.data;
 
     if (release && release.tag_name) {
       const remoteVersion = release.tag_name.replace(/^v/i, '');
       const hasUpdate = compareVersions(remoteVersion, CURRENT_APP_VERSION) > 0;
+
+      if (hasUpdate && !ignoreDismissed) {
+        const dismissedVersion = await getDismissedUpdateVersion();
+        if (dismissedVersion === remoteVersion) {
+          return {
+            hasUpdate: false,
+            isMandatory: false,
+            updateInfo: null,
+          };
+        }
+      }
 
       // Extract APK download url if attached in release assets
       const apkAsset = release.assets?.find((a: any) =>

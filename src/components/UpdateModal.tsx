@@ -11,7 +11,11 @@ import {
 } from 'react-native';
 import { CheckCircle2, Download, Sparkles, X } from 'lucide-react-native';
 import { colors, spacing, cardShadow } from '../theme';
-import { CURRENT_APP_VERSION, UpdateInfo } from '../services/updateService';
+import {
+  CURRENT_APP_VERSION,
+  UpdateInfo,
+  setDismissedUpdateVersion,
+} from '../services/updateService';
 
 interface UpdateModalProps {
   visible: boolean;
@@ -27,6 +31,13 @@ export function UpdateModal({
   onDismiss,
 }: UpdateModalProps): React.JSX.Element | null {
   if (!visible || !updateInfo) return null;
+
+  const handleDismiss = () => {
+    if (updateInfo?.version) {
+      setDismissedUpdateVersion(updateInfo.version).catch(() => undefined);
+    }
+    onDismiss();
+  };
 
   const handleDownload = async () => {
     try {
@@ -49,7 +60,7 @@ export function UpdateModal({
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={isMandatory ? undefined : onDismiss}>
+      onRequestClose={isMandatory ? undefined : handleDismiss}>
       <View style={styles.overlay}>
         <View style={styles.card}>
           {/* Header Badge */}
@@ -60,7 +71,7 @@ export function UpdateModal({
             </View>
             {!isMandatory && (
               <TouchableOpacity
-                onPress={onDismiss}
+                onPress={handleDismiss}
                 hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
                 style={styles.closeButton}>
                 <X size={18} color={colors.muted} />
@@ -112,7 +123,7 @@ export function UpdateModal({
               <TouchableOpacity
                 style={styles.laterButton}
                 activeOpacity={0.7}
-                onPress={onDismiss}>
+                onPress={handleDismiss}>
                 <Text style={styles.laterButtonText}>MAYBE LATER</Text>
               </TouchableOpacity>
             )}
