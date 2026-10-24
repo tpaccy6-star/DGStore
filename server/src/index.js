@@ -231,6 +231,44 @@ app.post('/orders', auth, (req, res) => {
 
   try {
     create();
+
+    const customerName = req.user.name || 'Customer';
+    const notifTitle = `New Order #${id}`;
+    const notifMessage = `${customerName} placed an order of ${total.toLocaleString()} RWF (${orderItems.length} item${orderItems.length > 1 ? 's' : ''})`;
+    const notifData = JSON.stringify({
+      orderId: id,
+      customerName,
+      customerEmail: req.user.email,
+      total,
+      itemsCount: orderItems.length,
+      items: orderItems.map(i => `${i.name} (x${i.quantity})`),
+      paymentMethod: recordedPaymentMethod,
+      deliveryAddress: deliveryAddress.trim()
+    });
+
+    try {
+      db.prepare('INSERT INTO admin_notifications (type, title, message, data) VALUES (?, ?, ?, ?)').run('new_order', notifTitle, notifMessage, notifData);
+    } catch (notifErr) {
+      console.error('Failed to create admin notification:', notifErr.message);
+    }
+
+    if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+      try {
+        const tgText = `🔔 *D&G Store: New Order Received!*\n\n*Order ID:* \`${id}\`\n*Customer:* ${customerName}\n*Amount:* ${total.toLocaleString()} RWF\n*Payment:* ${recordedPaymentMethod}\n*Delivery:* ${deliveryAddress.trim()}\n\n*Items:*\n${orderItems.map(i => `• ${i.name} x${i.quantity} (${(i.price * i.quantity).toLocaleString()} RWF)`).join('\n')}`;
+        fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: process.env.TELEGRAM_CHAT_ID,
+            text: tgText,
+            parse_mode: 'Markdown'
+          })
+        }).catch(err => console.error('[Telegram Notify Error]', err.message));
+      } catch (tgErr) {
+        console.error('[Telegram Dispatch Error]', tgErr.message);
+      }
+    }
+
     res.status(201).json(orderById(id, req.user.id));
   } catch (err) {
     res.status(400).json({ message: err.message || 'Could not complete order' });
@@ -271,6 +309,25 @@ app.get('/admin/orders', auth, ownerOnly, (_req, res) => {
   res.json(orders.map(order => ({ ...order, items: getItems.all(order.id) })));
 });
 app.patch('/admin/orders/:id/status', auth, ownerOnly, (req, res) => { if (!['Processing', 'Packed', 'In Transit', 'Delivered', 'Cancelled'].includes(req.body?.status)) return res.status(400).json({ message: 'Invalid order status' }); db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(req.body.status, req.params.id); res.status(204).end(); });
+
+app.get('/admin/notifications', auth, ownerOnly, (_req, res) => {
+  const rows = db.prepare('SELECT id, type, title, message, data, is_read AS isRead, created_at AS createdAt FROM admin_notifications ORDER BY created_at DESC LIMIT 50').all();
+  const unreadCount = db.prepare('SELECT COUNT(*) AS count FROM admin_notifications WHERE is_read = 0').get().count;
+  res.json({
+    unreadCount,
+    notifications: rows.map(r => ({ ...r, isRead: Boolean(r.isRead) }))
+  });
+});
+
+app.patch('/admin/notifications/:id/read', auth, ownerOnly, (req, res) => {
+  db.prepare('UPDATE admin_notifications SET is_read = 1 WHERE id = ?').run(Number(req.params.id));
+  res.status(204).end();
+});
+
+app.patch('/admin/notifications/read-all', auth, ownerOnly, (_req, res) => {
+  db.prepare('UPDATE admin_notifications SET is_read = 1').run();
+  res.status(204).end();
+});
 
 app.use((error, _req, res, _next) => { console.error(error); res.status(500).json({ message: 'Unexpected server error' }); });
 if (require.main === module) app.listen(port, '0.0.0.0', () => console.log(`DGStore API listening on http://localhost:${port}`));

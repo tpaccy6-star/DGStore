@@ -13,5 +13,5 @@ export type RootStackParamList = {
   Orders: undefined;
   OrderDetails: { order: OrderResponse };
   Profile: undefined;
-  Admin: undefined;
+  Admin: { initialSection?: 'Overview' | 'Orders' | 'Notifications' | 'Products' | 'Customers' } | undefined;
 };

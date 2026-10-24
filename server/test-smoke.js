@@ -83,7 +83,18 @@ const server = app.listen(0, '127.0.0.1', async () => {
     assert.ok(recentOrder);
     assert.equal(recentOrder.items.length, 2);
 
-    console.log('Backend multi-item & ACID DB consistency tests PASSED successfully!');
+    // 7. Admin notifications check
+    const notifs = await request('GET', '/admin/notifications', null, loginOwner.body.token);
+    assert.equal(notifs.status, 200);
+    assert.ok(notifs.body.unreadCount >= 1);
+    assert.ok(notifs.body.notifications.some(n => n.title.includes(orderRes.body.id)));
+
+    // 8. Mark notification as read
+    const targetNotif = notifs.body.notifications.find(n => n.title.includes(orderRes.body.id));
+    const markReadRes = await request('PATCH', `/admin/notifications/${targetNotif.id}/read`, null, loginOwner.body.token);
+    assert.equal(markReadRes.status, 204);
+
+    console.log('Backend multi-item, ACID DB consistency & Admin Notifications tests PASSED successfully!');
   } finally {
     server.close();
   }

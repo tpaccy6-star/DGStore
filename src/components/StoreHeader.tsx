@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Heart, ChevronLeft, ShoppingBag } from 'lucide-react-native';
+import { Bell, Heart, ChevronLeft, ShoppingBag } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +8,7 @@ import { useAppSelector } from '../store';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, spacing } from '../theme';
 import { BrandLogo } from './BrandLogo';
+import { getAdminNotifications } from '../api/admin';
 
 type Props = {
   title?: string;
@@ -18,8 +20,30 @@ type Props = {
 export function StoreHeader({ title, showBack = false, onCart, hideBrand = false }: Props): React.JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
+  const user = useAppSelector(state => state.auth.user);
   const count = useAppSelector(state => state.cart.items.reduce((sum, item) => sum + item.quantity, 0));
   const wishlistCount = useAppSelector(state => state.wishlist.items.length);
+
+  const isOwner = user?.role === 'owner';
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
+
+  useEffect(() => {
+    if (!isOwner) return;
+    let mounted = true;
+    const fetchUnread = () => {
+      getAdminNotifications()
+        .then(res => {
+          if (mounted) setUnreadNotifs(res.unreadCount || 0);
+        })
+        .catch(() => undefined);
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [isOwner]);
 
   return (
     <View
@@ -54,6 +78,28 @@ export function StoreHeader({ title, showBack = false, onCart, hideBrand = false
       </View>
 
       <View style={styles.rightActions}>
+        {isOwner && (
+          <Pressable
+            accessibilityLabel="Owner notifications"
+            accessibilityRole="button"
+            onPress={() => navigation.navigate('Admin', { initialSection: 'Notifications' })}
+            style={styles.iconButton}
+          >
+            <View style={styles.cartIconWrapper}>
+              <Bell
+                color={unreadNotifs > 0 ? colors.accent : colors.ink}
+                size={21}
+                strokeWidth={2}
+              />
+              {unreadNotifs > 0 && (
+                <View style={[styles.badge, styles.notifBadge]}>
+                  <Text style={styles.badgeText}>{unreadNotifs > 99 ? '99+' : unreadNotifs}</Text>
+                </View>
+              )}
+            </View>
+          </Pressable>
+        )}
+
         <Pressable
           accessibilityLabel="Saved items wishlist"
           accessibilityRole="button"
@@ -165,5 +211,8 @@ const styles = StyleSheet.create({
   },
   wishlistBadge: {
     backgroundColor: colors.ink,
+  },
+  notifBadge: {
+    backgroundColor: colors.danger,
   },
 });

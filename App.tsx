@@ -14,6 +14,7 @@ import { PersistGate } from 'redux-persist/integration/react';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { BrandLogo } from './src/components/BrandLogo';
 import { UpdateModal } from './src/components/UpdateModal';
+import { OwnerNotificationBanner } from './src/components/OwnerNotificationBanner';
 import { colors, spacing } from './src/theme';
 import { persistor, store } from './src/store';
 import { getSavedServerUrl } from './src/store/serverStorage';
@@ -44,6 +45,7 @@ function App(): React.JSX.Element {
           <StatusBar barStyle="dark-content" />
           <NavigationContainer>
             <RootNavigator />
+            <OwnerNotificationBanner />
           </NavigationContainer>
           <UpdateModal
             visible={showUpdateModal}

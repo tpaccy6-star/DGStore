@@ -72,6 +72,15 @@ db.exec(`
     code TEXT NOT NULL,
     expires_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS admin_notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL DEFAULT 'new_order',
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    data TEXT,
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 const owner = db.prepare('SELECT id FROM users WHERE email = ?').get('owner@dgstore.rw');

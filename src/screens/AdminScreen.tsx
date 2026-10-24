@@ -17,6 +17,7 @@ import {
 import NetInfo from '@react-native-community/netinfo';
 import {
   AlertCircle,
+  Bell,
   Check,
   ChevronDown,
   ChevronUp,
@@ -25,30 +26,37 @@ import {
   Package,
   Plus,
   Search,
+  Send,
   Tag,
   Trash2,
   X,
 } from 'lucide-react-native';
+import { useRoute, type RouteProp } from '@react-navigation/native';
 import { StoreHeader } from '../components/StoreHeader';
 import { cardShadow, colors, spacing } from '../theme';
 import { formatRwf, useI18n } from '../i18n';
+import type { RootStackParamList } from '../navigation/types';
 import {
   createAdminProduct,
   deleteAdminProduct,
   getAdminCustomers,
+  getAdminNotifications,
   getAdminOrders,
   getAdminProducts,
   getAdminStats,
+  markAdminNotificationRead,
+  markAllAdminNotificationsRead,
   updateAdminOrderStatus,
   updateAdminProduct,
   type AdminCustomer,
+  type AdminNotification,
   type AdminOrder,
   type AdminProduct,
   type AdminStats,
 } from '../api/admin';
 
 const statuses = ['Processing', 'Packed', 'In Transit', 'Delivered', 'Cancelled'];
-const sections = ['Overview', 'Orders', 'Products', 'Customers'] as const;
+const sections = ['Overview', 'Orders', 'Notifications', 'Products', 'Customers'] as const;
 type AdminSection = (typeof sections)[number];
 
 export const standardCategories = [
@@ -64,10 +72,13 @@ export const standardCategories = [
 
 export function AdminScreen(): React.JSX.Element {
   const i18n = useI18n();
+  const route = useRoute<RouteProp<RootStackParamList, 'Admin'>>();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
+  const [notifications, setNotifications] = useState<AdminNotification[]>([]);
+  const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState(false);
@@ -94,6 +105,12 @@ export function AdminScreen(): React.JSX.Element {
   const [refreshing, setRefreshing] = useState(false);
   const [section, setSection] = useState<AdminSection>('Overview');
 
+  useEffect(() => {
+    if (route.params?.initialSection) {
+      setSection(route.params.initialSection);
+    }
+  }, [route.params?.initialSection]);
+
   const load = useCallback(async (refresh = false) => {
     const network = await NetInfo.fetch();
     if (!network.isConnected) {
@@ -112,12 +129,17 @@ export function AdminScreen(): React.JSX.Element {
         getAdminOrders(),
         getAdminProducts(),
         getAdminCustomers(),
+        getAdminNotifications(),
       ]);
-      const [nextStats, nextOrders, nextProducts, nextCustomers] = results;
+      const [nextStats, nextOrders, nextProducts, nextCustomers, nextNotifs] = results;
       if (nextStats.status === 'fulfilled') setStats(nextStats.value);
       if (nextOrders.status === 'fulfilled') setOrders(nextOrders.value);
       if (nextProducts.status === 'fulfilled') setProducts(nextProducts.value);
       if (nextCustomers.status === 'fulfilled') setCustomers(nextCustomers.value);
+      if (nextNotifs.status === 'fulfilled') {
+        setNotifications(nextNotifs.value.notifications || []);
+        setUnreadNotifsCount(nextNotifs.value.unreadCount || 0);
+      }
       setError(results.every(result => result.status === 'rejected'));
     } catch {
       setError(true);
@@ -126,6 +148,26 @@ export function AdminScreen(): React.JSX.Element {
       setRefreshing(false);
     }
   }, []);
+
+  async function markRead(id: number) {
+    try {
+      await markAdminNotificationRead(id);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+      setUnreadNotifsCount(prev => Math.max(0, prev - 1));
+    } catch {
+      // Ignore
+    }
+  }
+
+  async function markAllRead() {
+    try {
+      await markAllAdminNotificationsRead();
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+      setUnreadNotifsCount(0);
+    } catch {
+      // Ignore
+    }
+  }
 
   useEffect(() => {
     load().catch(() => {
@@ -338,6 +380,11 @@ export function AdminScreen(): React.JSX.Element {
               style={[styles.tab, section === item && styles.tabActive]}
             >
               <Text style={[styles.tabText, section === item && styles.tabTextActive]}>{item}</Text>
+              {item === 'Notifications' && unreadNotifsCount > 0 && (
+                <View style={styles.tabBadge}>
+                  <Text style={styles.tabBadgeText}>{unreadNotifsCount > 99 ? '99+' : unreadNotifsCount}</Text>
+                </View>
+              )}
             </Pressable>
           ))}
         </ScrollView>
@@ -464,6 +511,148 @@ export function AdminScreen(): React.JSX.Element {
                 </Text>
               </Pressable>
             )}
+          </View>
+        )}
+
+        {/* Notifications Section */}
+        {section === 'Notifications' && (
+          <View>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.section}>Order Notifications</Text>
+                <Text style={styles.sectionSubtitle}>
+                  {unreadNotifsCount} unread • {notifications.length} total alerts
+                </Text>
+              </View>
+              {unreadNotifsCount > 0 && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={markAllRead}
+                  style={styles.markAllReadBtn}
+                >
+                  <Check color={colors.goldDark} size={14} strokeWidth={2.5} />
+                  <Text style={styles.markAllReadText}>Mark all as read</Text>
+                </Pressable>
+              )}
+            </View>
+
+            {notifications.length === 0 ? (
+              <View style={[styles.emptyContainer, cardShadow]}>
+                <Bell color={colors.mutedLight} size={36} strokeWidth={1.5} />
+                <Text style={styles.emptyTitle}>No Order Notifications</Text>
+                <Text style={styles.emptyText}>
+                  When customers place orders in the app, you will receive instant notifications and chimes here.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.notifList}>
+                {notifications.map(notif => {
+                  let parsed: { customerName?: string; total?: number; itemsCount?: number; items?: string[]; paymentMethod?: string; deliveryAddress?: string } = {};
+                  if (notif.data) {
+                    try {
+                      parsed = JSON.parse(notif.data);
+                    } catch {
+                      parsed = {};
+                    }
+                  }
+
+                  return (
+                    <View
+                      key={notif.id}
+                      style={[
+                        styles.notifCard,
+                        cardShadow,
+                        !notif.isRead && styles.notifCardUnread,
+                      ]}
+                    >
+                      <View style={styles.notifTopRow}>
+                        <View style={styles.notifBadgeGroup}>
+                          <View
+                            style={[
+                              styles.notifIconWrap,
+                              !notif.isRead ? styles.notifIconWrapUnread : styles.notifIconWrapRead,
+                            ]}
+                          >
+                            <Bell
+                              color={!notif.isRead ? colors.gold : colors.muted}
+                              size={14}
+                              strokeWidth={2}
+                            />
+                          </View>
+                          <Text
+                            style={[
+                              styles.notifTitle,
+                              !notif.isRead && styles.notifTitleUnread,
+                            ]}
+                          >
+                            {notif.title}
+                          </Text>
+                          {!notif.isRead && <View style={styles.unreadDot} />}
+                        </View>
+                        <Text style={styles.notifTime}>
+                          {new Date(notif.createdAt).toLocaleDateString([], {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.notifMessage}>{notif.message}</Text>
+
+                      {parsed.deliveryAddress && (
+                        <Text style={styles.notifDetailText}>
+                          📍 Delivery: {parsed.deliveryAddress}
+                        </Text>
+                      )}
+
+                      {parsed.paymentMethod && (
+                        <Text style={styles.notifDetailText}>
+                          💳 Payment: {parsed.paymentMethod}
+                        </Text>
+                      )}
+
+                      <View style={styles.notifActionRow}>
+                        <Pressable
+                          style={styles.notifViewBtn}
+                          onPress={() => {
+                            if (!notif.isRead) markRead(notif.id);
+                            setSection('Orders');
+                          }}
+                        >
+                          <Text style={styles.notifViewBtnText}>View in Orders →</Text>
+                        </Pressable>
+                        {!notif.isRead && (
+                          <Pressable
+                            style={styles.notifMarkReadBtn}
+                            onPress={() => markRead(notif.id)}
+                          >
+                            <Text style={styles.notifMarkReadText}>Mark read</Text>
+                          </Pressable>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* Outbound Telegram / Push Setup Info Box */}
+            <View style={[styles.telegramGuideCard, cardShadow]}>
+              <View style={styles.telegramGuideHeader}>
+                <View style={styles.telegramIconWrap}>
+                  <Send color={colors.accent} size={16} strokeWidth={2} />
+                </View>
+                <Text style={styles.telegramGuideTitle}>Phone Alerts Outside the App</Text>
+              </View>
+              <Text style={styles.telegramGuideText}>
+                Want to receive instant phone alerts on WhatsApp or Telegram when the app is closed?
+                The backend already supports automatic Telegram Bot dispatches. Set{' '}
+                <Text style={styles.codeHighlight}>TELEGRAM_BOT_TOKEN</Text> and{' '}
+                <Text style={styles.codeHighlight}>TELEGRAM_CHAT_ID</Text> in your server environment to receive alerts anywhere!
+              </Text>
+            </View>
           </View>
         )}
 
@@ -1584,6 +1773,186 @@ const styles = StyleSheet.create({
   overviewMoreOrdersBtnText: {
     color: colors.goldDark,
     fontSize: 12,
+    fontWeight: '700',
+  },
+  tabBadge: {
+    backgroundColor: colors.danger,
+    borderRadius: 8,
+    marginLeft: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  tabBadgeText: {
+    color: colors.white,
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  markAllReadBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.goldLight,
+    borderColor: colors.goldMuted,
+    borderRadius: spacing.radiusPill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  markAllReadText: {
+    color: colors.goldDark,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderColor: colors.lineLight,
+    borderRadius: spacing.radius,
+    borderWidth: 1,
+    justifyContent: 'center',
+    padding: spacing.xl,
+    marginTop: spacing.md,
+  },
+  emptyTitle: {
+    color: colors.ink,
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  notifList: {
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  notifCard: {
+    backgroundColor: colors.card,
+    borderColor: colors.lineLight,
+    borderRadius: spacing.radius,
+    borderWidth: 1,
+    padding: spacing.md,
+  },
+  notifCardUnread: {
+    backgroundColor: '#FFFCF5',
+    borderColor: colors.gold,
+    borderWidth: 1.5,
+  },
+  notifTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  notifBadgeGroup: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  notifIconWrap: {
+    alignItems: 'center',
+    borderRadius: spacing.radiusPill,
+    height: 24,
+    justifyContent: 'center',
+    width: 24,
+  },
+  notifIconWrapUnread: {
+    backgroundColor: colors.goldLight,
+  },
+  notifIconWrapRead: {
+    backgroundColor: colors.cream,
+  },
+  notifTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  notifTitleUnread: {
+    fontWeight: '800',
+  },
+  unreadDot: {
+    backgroundColor: colors.danger,
+    borderRadius: 3,
+    height: 6,
+    width: 6,
+  },
+  notifTime: {
+    color: colors.muted,
+    fontSize: 11,
+  },
+  notifMessage: {
+    color: colors.inkLight,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  notifDetailText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  notifActionRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: 10,
+  },
+  notifViewBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.goldLight,
+    borderColor: colors.goldMuted,
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  notifViewBtnText: {
+    color: colors.goldDark,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  notifMarkReadBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+  },
+  notifMarkReadText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  telegramGuideCard: {
+    backgroundColor: '#F9FBF9',
+    borderColor: '#CDE5D4',
+    borderRadius: spacing.radius,
+    borderWidth: 1,
+    marginBottom: spacing.xl,
+    padding: spacing.md,
+  },
+  telegramGuideHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 6,
+  },
+  telegramIconWrap: {
+    alignItems: 'center',
+    backgroundColor: '#E6F4EA',
+    borderRadius: 14,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  telegramGuideTitle: {
+    color: '#1E4620',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  telegramGuideText: {
+    color: '#2D5B31',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  codeHighlight: {
+    color: '#0E3A12',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '700',
   },
 });
