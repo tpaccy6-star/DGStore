@@ -12,3 +12,23 @@ export async function register(input: { name: string; email: string; password: s
   const response = await apiClient.post<AuthResponse>('/auth/register', input);
   return response.data;
 }
+
+export async function updateProfile(input: { name: string }): Promise<{ user: ApiUser }> {
+  const response = await apiClient.patch<{ user: ApiUser }>('/auth/profile', input);
+  return response.data;
+}
+
+export async function changePassword(input: { currentPassword: string; newPassword: string }): Promise<{ message: string }> {
+  const response = await apiClient.post<{ message: string }>('/auth/change-password', input);
+  return response.data;
+}
+
+export async function forgotPassword(input: { identifier: string }): Promise<{ message: string; code?: string; email?: string }> {
+  const response = await apiClient.post<{ message: string; code?: string; email?: string }>('/auth/forgot-password', input);
+  return response.data;
+}
+
+export async function resetPassword(input: { email: string; code: string; newPassword: string }): Promise<{ message: string }> {
+  const response = await apiClient.post<{ message: string }>('/auth/reset-password', input);
+  return response.data;
+}

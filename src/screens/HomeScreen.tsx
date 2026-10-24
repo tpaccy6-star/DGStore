@@ -24,6 +24,7 @@ import {
 } from '../i18n';
 import { useAppDispatch, useAppSelector } from '../store';
 import { addItem, updateQuantity } from '../store/cartSlice';
+import { toggleWishlist } from '../store/wishlistSlice';
 import type { RootStackParamList } from '../navigation/types';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -44,6 +45,7 @@ export function HomeScreen(): React.JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const user = useAppSelector(state => state.auth.user);
   const cartItems = useAppSelector(state => state.cart.items);
+  const wishlistItems = useAppSelector(state => state.wishlist.items);
   const dispatch = useAppDispatch();
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -220,6 +222,7 @@ export function HomeScreen(): React.JSX.Element {
             {visible.slice(0, 6).map(product => {
               const quantity =
                 cartItems.find(item => item.productId === String(product.id))?.quantity ?? 0;
+              const isFav = wishlistItems.some(w => w.id === product.id);
               return (
                 <Pressable
                   key={product.id}
@@ -228,9 +231,21 @@ export function HomeScreen(): React.JSX.Element {
                 >
                   <View style={styles.productImageWrap}>
                     <Image source={{ uri: product.image }} style={styles.productImage} />
-                    <View style={styles.favoriteBadge}>
-                      <Heart color={colors.ink} fill="transparent" size={17} strokeWidth={1.8} />
-                    </View>
+                    <Pressable
+                      hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+                      onPress={e => {
+                        e.stopPropagation();
+                        dispatch(toggleWishlist(product));
+                      }}
+                      style={styles.favoriteBadge}
+                    >
+                      <Heart
+                        color={isFav ? colors.goldDark : colors.ink}
+                        fill={isFav ? colors.gold : 'transparent'}
+                        size={17}
+                        strokeWidth={1.8}
+                      />
+                    </Pressable>
                     {product.oldPrice ? <Text style={styles.sale}>SALE</Text> : null}
                   </View>
 

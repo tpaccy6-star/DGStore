@@ -4,27 +4,32 @@ import {
   ArrowRight,
   Eye,
   EyeOff,
+  KeyRound,
   Lock,
   Mail,
   ShieldCheck,
   Sparkles,
   Truck,
+  X,
 } from 'lucide-react-native';
 import {
+  Alert,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { z } from 'zod';
-import { login } from '../api/auth';
+import { login, forgotPassword, resetPassword } from '../api/auth';
 import { setApiToken } from '../api/client';
 import { BrandLogo } from '../components/BrandLogo';
 import { StoreHeader } from '../components/StoreHeader';
@@ -51,6 +56,62 @@ export function LoginScreen(): React.JSX.Element {
   const [showPassword, setShowPassword] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const scrollViewRef = useRef<React.ElementRef<typeof ScrollView>>(null);
+
+  // Forgot password flow
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotStep, setForgotStep] = useState<1 | 2>(1);
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotCode, setForgotCode] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotTargetEmail, setForgotTargetEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  const handleRequestResetCode = async () => {
+    if (!forgotIdentifier.trim()) {
+      Alert.alert('Required', 'Please enter your email or username.');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const res = await forgotPassword({ identifier: forgotIdentifier.trim() });
+      if (res.code) {
+        setForgotCode(res.code);
+      }
+      setForgotTargetEmail(res.email || forgotIdentifier.trim());
+      setForgotStep(2);
+      Alert.alert(
+        'Code Generated',
+        `A 6-digit verification code was generated.\nCode: ${res.code || 'Check email'}`,
+      );
+    } catch {
+      Alert.alert('Error', 'Unable to generate reset code.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleConfirmReset = async () => {
+    if (!forgotCode.trim() || !forgotNewPassword || forgotNewPassword.length < 6) {
+      Alert.alert('Invalid Input', 'Enter the 6-digit code and a new password (min 6 chars).');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      await resetPassword({
+        email: forgotTargetEmail,
+        code: forgotCode.trim(),
+        newPassword: forgotNewPassword,
+      });
+      setShowForgotModal(false);
+      setForgotStep(1);
+      setValue('password', forgotNewPassword);
+      Alert.alert('Password Reset', 'Your password has been reset. You can now log in.');
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Invalid or expired code.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   useEffect(() => {
     const showSub = Keyboard.addListener(
@@ -222,6 +283,22 @@ export function LoginScreen(): React.JSX.Element {
 
             {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
 
+            {/* Forgot Password Link */}
+            <View style={styles.forgotPasswordContainer}>
+              <Pressable
+                accessibilityLabel="Forgot password link"
+                onPress={() => {
+                  setForgotIdentifier('');
+                  setForgotCode('');
+                  setForgotNewPassword('');
+                  setForgotStep(1);
+                  setShowForgotModal(true);
+                }}
+              >
+                <Text style={styles.forgotPasswordLink}>Forgot your password?</Text>
+              </Pressable>
+            </View>
+
             {/* Primary Action Button */}
             <Pressable
               accessibilityLabel={i18n.t('loginButton')}
@@ -263,6 +340,89 @@ export function LoginScreen(): React.JSX.Element {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Forgot Password Recovery Modal */}
+      <Modal
+        visible={showForgotModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowForgotModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, cardShadow]}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Password Recovery</Text>
+              <TouchableOpacity onPress={() => setShowForgotModal(false)}>
+                <X size={18} color={colors.muted} />
+              </TouchableOpacity>
+            </View>
+
+            {forgotStep === 1 ? (
+              <View>
+                <Text style={styles.modalSubtitle}>
+                  Enter your registered email address or username to receive a 6-digit verification code.
+                </Text>
+
+                <Text style={styles.modalInputLabel}>Email or Username</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  autoCapitalize="none"
+                  value={forgotIdentifier}
+                  onChangeText={setForgotIdentifier}
+                  placeholder="e.g. aline@dgstore.rw"
+                  placeholderTextColor={colors.mutedLight}
+                />
+
+                <TouchableOpacity
+                  style={[styles.modalSubmitBtn, forgotLoading && styles.buttonDisabled]}
+                  disabled={forgotLoading}
+                  onPress={handleRequestResetCode}
+                >
+                  <Text style={styles.modalSubmitBtnText}>
+                    {forgotLoading ? 'GENERATING CODE...' : 'CONTINUE'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View>
+                <Text style={styles.modalSubtitle}>
+                  Enter the 6-digit code and choose your new password.
+                </Text>
+
+                <Text style={styles.modalInputLabel}>6-Digit Verification Code</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  keyboardType="number-pad"
+                  value={forgotCode}
+                  onChangeText={setForgotCode}
+                  placeholder="e.g. 123456"
+                  placeholderTextColor={colors.mutedLight}
+                />
+
+                <Text style={styles.modalInputLabel}>New Password (min 6 chars)</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  secureTextEntry
+                  value={forgotNewPassword}
+                  onChangeText={setForgotNewPassword}
+                  placeholder="Enter new password"
+                  placeholderTextColor={colors.mutedLight}
+                />
+
+                <TouchableOpacity
+                  style={[styles.modalSubmitBtn, forgotLoading && styles.buttonDisabled]}
+                  disabled={forgotLoading}
+                  onPress={handleConfirmReset}
+                >
+                  <Text style={styles.modalSubmitBtnText}>
+                    {forgotLoading ? 'RESETTING...' : 'RESET PASSWORD'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -460,5 +620,76 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 11,
     fontWeight: '600',
+  },
+  forgotPasswordContainer: {
+    alignItems: 'flex-end',
+    marginBottom: 14,
+    marginTop: -4,
+  },
+  forgotPasswordLink: {
+    color: colors.goldDark,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    alignItems: 'center',
+    backgroundColor: colors.overlay,
+    flex: 1,
+    justifyContent: 'center',
+    padding: spacing.page,
+  },
+  modalCard: {
+    backgroundColor: colors.card,
+    borderRadius: spacing.radiusLg,
+    padding: spacing.lg,
+    width: '100%',
+  },
+  modalHeaderRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  modalTitle: {
+    color: colors.ink,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  modalSubtitle: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: spacing.md,
+  },
+  modalInputLabel: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
+    marginTop: 8,
+  },
+  modalInput: {
+    backgroundColor: colors.paper,
+    borderColor: colors.line,
+    borderRadius: spacing.radiusSm,
+    borderWidth: 1,
+    color: colors.ink,
+    fontSize: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  modalSubmitBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: spacing.radiusSm,
+    justifyContent: 'center',
+    marginTop: spacing.lg,
+    paddingVertical: 14,
+  },
+  modalSubmitBtnText: {
+    color: colors.goldBright,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
 });

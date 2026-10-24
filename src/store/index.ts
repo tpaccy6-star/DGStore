@@ -3,11 +3,16 @@ import { useDispatch, useSelector, type TypedUseSelectorHook } from 'react-redux
 import { persistReducer, persistStore } from 'redux-persist';
 import cartReducer from './cartSlice';
 import authReducer from './authSlice';
+import wishlistReducer from './wishlistSlice';
 import { keychainStorage } from './keychainStorage';
 
-const rootReducer = combineReducers({ auth: authReducer, cart: cartReducer });
+const rootReducer = combineReducers({
+  auth: authReducer,
+  cart: cartReducer,
+  wishlist: wishlistReducer,
+});
 const persistedReducer = persistReducer(
-  { key: 'root', storage: keychainStorage, timeout: 0, whitelist: ['cart'] },
+  { key: 'root', storage: keychainStorage, timeout: 0, whitelist: ['cart', 'wishlist'] },
   rootReducer,
 );
 

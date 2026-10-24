@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { ChevronLeft, ShoppingBag } from 'lucide-react-native';
+import { Heart, ChevronLeft, ShoppingBag } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +19,7 @@ export function StoreHeader({ title, showBack = false, onCart, hideBrand = false
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const count = useAppSelector(state => state.cart.items.reduce((sum, item) => sum + item.quantity, 0));
+  const wishlistCount = useAppSelector(state => state.wishlist.items.length);
 
   return (
     <View
@@ -52,21 +53,44 @@ export function StoreHeader({ title, showBack = false, onCart, hideBrand = false
         )}
       </View>
 
-      <Pressable
-        accessibilityLabel="Open cart"
-        accessibilityRole="button"
-        onPress={onCart ?? (() => navigation.navigate('Cart'))}
-        style={styles.iconButton}
-      >
-        <View style={styles.cartIconWrapper}>
-          <ShoppingBag color={colors.ink} size={22} strokeWidth={2} />
-          {count > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
-            </View>
-          )}
-        </View>
-      </Pressable>
+      <View style={styles.rightActions}>
+        <Pressable
+          accessibilityLabel="Saved items wishlist"
+          accessibilityRole="button"
+          onPress={() => navigation.navigate('Wishlist')}
+          style={styles.iconButton}
+        >
+          <View style={styles.cartIconWrapper}>
+            <Heart
+              color={wishlistCount > 0 ? colors.accent : colors.ink}
+              fill={wishlistCount > 0 ? colors.goldLight : 'transparent'}
+              size={21}
+              strokeWidth={2}
+            />
+            {wishlistCount > 0 && (
+              <View style={[styles.badge, styles.wishlistBadge]}>
+                <Text style={styles.badgeText}>{wishlistCount > 99 ? '99+' : wishlistCount}</Text>
+              </View>
+            )}
+          </View>
+        </Pressable>
+
+        <Pressable
+          accessibilityLabel="Open cart"
+          accessibilityRole="button"
+          onPress={onCart ?? (() => navigation.navigate('Cart'))}
+          style={styles.iconButton}
+        >
+          <View style={styles.cartIconWrapper}>
+            <ShoppingBag color={colors.ink} size={22} strokeWidth={2} />
+            {count > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
+              </View>
+            )}
+          </View>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -133,5 +157,13 @@ const styles = StyleSheet.create({
   titleWrap: {
     alignItems: 'center',
     flexDirection: 'row',
+  },
+  rightActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 2,
+  },
+  wishlistBadge: {
+    backgroundColor: colors.ink,
   },
 });

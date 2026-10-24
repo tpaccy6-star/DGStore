@@ -6,9 +6,9 @@ import { getProducts, type Product } from '../api/products';
 import { BottomNav } from '../components/BottomNav';
 import { StoreHeader } from '../components/StoreHeader';
 import { formatRwf, useI18n } from '../i18n';
-import { useAppSelector } from '../store';
-import { useAppDispatch } from '../store';
+import { useAppDispatch, useAppSelector } from '../store';
 import { addItem, updateQuantity } from '../store/cartSlice';
+import { toggleWishlist } from '../store/wishlistSlice';
 import { colors, spacing } from '../theme';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -21,6 +21,7 @@ export function ProductsScreen(): React.JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const user = useAppSelector(state => state.auth.user);
   const cartItems = useAppSelector(state => state.cart.items);
+  const wishlistItems = useAppSelector(state => state.wishlist.items);
   const dispatch = useAppDispatch();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +34,41 @@ export function ProductsScreen(): React.JSX.Element {
   const hasLoaded = useRef(false);
   const load = useCallback(async () => { const background = hasLoaded.current; if (background) setRefreshing(true); else setLoading(true); setError(false); const network = await NetInfo.fetch(); if (!network.isConnected) { setOffline(true); setLoading(false); setRefreshing(false); hasLoaded.current = true; return; } setOffline(false); try { setProducts(await getProducts({ search: search.trim(), category: category === 'All' ? '' : category })); } catch { setError(true); } finally { setLoading(false); setRefreshing(false); hasLoaded.current = true; } }, [category, search]);
   useEffect(() => { const timer = setTimeout(() => { load().catch(() => { setError(true); setLoading(false); setRefreshing(false); }); }, 300); return () => clearTimeout(timer); }, [load]);
-  const renderProduct = ({ item }: { item: Product }) => { const quantity = cartItems.find(entry => entry.productId === String(item.id))?.quantity ?? 0; const changeQuantity = (nextQuantity: number) => { if (nextQuantity <= 0) dispatch(updateQuantity({ productId: String(item.id), quantity: 0 })); else dispatch(addItem({ productId: String(item.id), quantity: nextQuantity - quantity, name: item.name, price: item.price, image: item.image, stock: item.stock })); }; return <Pressable onPress={() => navigation.navigate('ProductDetails', { product: item })} style={styles.card}><View style={styles.imageWrap}><Image source={{ uri: item.image }} style={styles.image} />{item.oldPrice ? <Text style={styles.sale}>SALE</Text> : null}<Heart color={colors.ink} fill="transparent" size={20} strokeWidth={1.7} style={styles.heart} /></View><Text style={styles.name} numberOfLines={1}>{item.name}</Text><View style={styles.meta}><Text style={styles.metaText}>{item.category}</Text><Text style={styles.metaText}>·</Text><Star color={colors.accent} fill={colors.accent} size={11} /><Text style={styles.metaText}>{item.rating.toFixed(1)}</Text></View><Text style={styles.price}>{formatRwf(item.price)}</Text><View style={styles.quantityControls}><Pressable accessibilityLabel={`Remove one ${item.name}`} onPress={event => { event.stopPropagation(); changeQuantity(quantity - 1); }} style={styles.quantityButton}><Text style={styles.quantityButtonText}>−</Text></Pressable><Text style={styles.quantity}>{quantity}</Text><Pressable accessibilityLabel={`Add one ${item.name}`} disabled={quantity >= item.stock} onPress={event => { event.stopPropagation(); changeQuantity(quantity + 1); }} style={styles.quantityButton}><Text style={styles.quantityButtonText}>+</Text></Pressable></View></Pressable>; };
+  const renderProduct = ({ item }: { item: Product }) => {
+    const quantity = cartItems.find(entry => entry.productId === String(item.id))?.quantity ?? 0;
+    const isFav = wishlistItems.some(w => w.id === item.id);
+    const changeQuantity = (nextQuantity: number) => {
+      if (nextQuantity <= 0) dispatch(updateQuantity({ productId: String(item.id), quantity: 0 }));
+      else dispatch(addItem({ productId: String(item.id), quantity: nextQuantity - quantity, name: item.name, price: item.price, image: item.image, stock: item.stock }));
+    };
+    return (
+      <Pressable onPress={() => navigation.navigate('ProductDetails', { product: item })} style={styles.card}>
+        <View style={styles.imageWrap}>
+          <Image source={{ uri: item.image }} style={styles.image} />
+          {item.oldPrice ? <Text style={styles.sale}>SALE</Text> : null}
+          <Pressable
+            hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+            onPress={e => {
+              e.stopPropagation();
+              dispatch(toggleWishlist(item));
+            }}
+            style={styles.heartWrapper}
+          >
+            <Heart
+              color={isFav ? colors.goldDark : colors.ink}
+              fill={isFav ? colors.gold : 'transparent'}
+              size={19}
+              strokeWidth={1.8}
+            />
+          </Pressable>
+        </View>
+        <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+        <View style={styles.meta}><Text style={styles.metaText}>{item.category}</Text><Text style={styles.metaText}>·</Text><Star color={colors.accent} fill={colors.accent} size={11} /><Text style={styles.metaText}>{item.rating.toFixed(1)}</Text></View>
+        <Text style={styles.price}>{formatRwf(item.price)}</Text>
+        <View style={styles.quantityControls}><Pressable accessibilityLabel={`Remove one ${item.name}`} onPress={event => { event.stopPropagation(); changeQuantity(quantity - 1); }} style={styles.quantityButton}><Text style={styles.quantityButtonText}>−</Text></Pressable><Text style={styles.quantity}>{quantity}</Text><Pressable accessibilityLabel={`Add one ${item.name}`} disabled={quantity >= item.stock} onPress={event => { event.stopPropagation(); changeQuantity(quantity + 1); }} style={styles.quantityButton}><Text style={styles.quantityButtonText}>+</Text></Pressable></View>
+      </Pressable>
+    );
+  };
   if (loading) return <View style={styles.center}><StoreHeader title="Shop" /><ActivityIndicator color={colors.accent} /><Text>{i18n.t('loading')}</Text></View>;
   if ((offline || error) && products.length === 0) return <View style={styles.center}><StoreHeader title="Shop" /><Text>{offline ? i18n.t('offlineMessage') : i18n.t('productsError')}</Text><Pressable onPress={() => load().catch(() => undefined)} style={styles.button}><Text style={styles.buttonText}>{i18n.t('retryButton')}</Text></Pressable><BottomNav active="Products" signedIn={Boolean(user)} /></View>;
   return <View style={styles.screen}><StoreHeader title="Shop" /><FlatList contentContainerStyle={styles.content} data={products} numColumns={2} columnWrapperStyle={styles.columns} keyExtractor={item => String(item.id)} ListHeaderComponent={<><Text style={styles.title}>Discover products</Text><Text style={styles.subtitle}>Find something made for your everyday.</Text><View style={styles.search}><Search color={colors.muted} size={19} strokeWidth={1.8} /><TextInput value={search} onChangeText={setSearch} placeholder="Search products" placeholderTextColor={colors.muted} style={styles.searchInput} /></View><View style={styles.categoryHeader}><Text style={styles.categoryHeaderLabel}>Filter by Category</Text><Pressable onPress={() => setDropdownOpen(c => !c)} style={styles.dropdownBtn}><Filter color={colors.goldDark} size={14} /><Text style={styles.dropdownBtnText}>{category}</Text>{dropdownOpen ? <ChevronUp color={colors.ink} size={14} /> : <ChevronDown color={colors.muted} size={14} />}</Pressable></View>{dropdownOpen && <View style={styles.dropdownMenuBox}>{categories.map(item => <Pressable key={item} onPress={() => { setCategory(item); setDropdownOpen(false); }} style={[styles.dropdownRow, category === item && styles.dropdownRowActive]}><Text style={[styles.dropdownRowText, category === item && styles.dropdownRowTextActive]}>{item}</Text>{category === item && <Text style={styles.checkMark}>✓</Text>}</Pressable>)}</View>}<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categories}>{categories.map(item => <Pressable key={item} onPress={() => setCategory(item)} style={[styles.category, category === item && styles.categoryActive]}><Text style={[styles.categoryText, category === item && styles.categoryTextActive]}>{item}</Text></Pressable>)}</ScrollView>{refreshing ? <Text style={styles.updating}>Updating products...</Text> : null}{offline ? <Text style={styles.notice}>{i18n.t('offlineMessage')}</Text> : null}{error ? <Text style={styles.notice}>{i18n.t('productsError')}</Text> : null}</>} ListEmptyComponent={<Text style={styles.empty}>{i18n.t('productsEmpty')}</Text>} renderItem={renderProduct} /><BottomNav active="Products" signedIn={Boolean(user)} /></View>;
@@ -62,7 +97,15 @@ const styles = StyleSheet.create({
   columns: { justifyContent: 'space-between' },
   content: { paddingBottom: 110, paddingHorizontal: spacing.page, paddingTop: 25 },
   empty: { color: colors.muted, paddingVertical: 30 },
-  heart: { position: 'absolute', right: 8, top: 8 },
+  heartWrapper: {
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 18,
+    padding: 6,
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    zIndex: 2,
+  },
   image: { height: 185, width: '100%' },
   imageWrap: { backgroundColor: colors.cream, height: 185, overflow: 'hidden', position: 'relative' },
   meta: { alignItems: 'center', flexDirection: 'row', gap: 3, marginTop: 4 },

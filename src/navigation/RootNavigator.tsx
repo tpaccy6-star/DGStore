@@ -6,6 +6,7 @@ import { RegisterScreen } from '../screens/RegisterScreen';
 import { ProductsScreen } from '../screens/ProductsScreen';
 import { ProductDetailsScreen } from '../screens/ProductDetailsScreen';
 import { CartScreen } from '../screens/CartScreen';
+import { WishlistScreen } from '../screens/WishlistScreen';
 import { CheckoutScreen } from '../screens/CheckoutScreen';
 import { OrdersScreen } from '../screens/OrdersScreen';
 import { OrderDetailsScreen } from '../screens/OrderDetailsScreen';
@@ -31,6 +32,7 @@ export function RootNavigator(): React.JSX.Element {
     <Stack.Screen name="Products" component={ProductsScreen} />
     <Stack.Screen name="ProductDetails" component={ProductDetailsScreen} />
     <Stack.Screen name="Cart" component={CartScreen} />
+    <Stack.Screen name="Wishlist" component={WishlistScreen} />
     <Stack.Screen name="Checkout" component={CheckoutScreen} />
     <Stack.Screen name="Login" component={LoginScreen} />
     <Stack.Screen name="Register" component={RegisterScreen} />

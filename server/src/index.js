@@ -60,6 +60,81 @@ app.post('/auth/login', (req, res) => {
   res.json({ token: tokenFor(safeUser), user: safeUser });
 });
 
+app.get('/products/:id/reviews', (req, res) => {
+  const pId = Number(req.params.id);
+  const reviews = db.prepare('SELECT id, user_name AS userName, rating, comment, created_at AS createdAt FROM reviews WHERE product_id = ? ORDER BY created_at DESC').all(pId);
+  res.json(reviews);
+});
+
+app.post('/products/:id/reviews', auth, (req, res) => {
+  const pId = Number(req.params.id);
+  const { rating, comment } = req.body || {};
+  const numRating = Number(rating);
+  if (!Number.isInteger(numRating) || numRating < 1 || numRating > 5 || !comment || !comment.trim()) {
+    return res.status(400).json({ message: 'Rating (1-5) and comment are required' });
+  }
+  const user = db.prepare('SELECT name FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ message: 'User not found' });
+
+  const insert = db.transaction(() => {
+    db.prepare('INSERT INTO reviews (product_id, user_id, user_name, rating, comment) VALUES (?, ?, ?, ?, ?)').run(pId, req.user.id, user.name, numRating, comment.trim());
+    const stats = db.prepare('SELECT COUNT(*) AS count, AVG(rating) AS avgRating FROM reviews WHERE product_id = ?').get(pId);
+    db.prepare('UPDATE products SET rating = ROUND(?, 1), reviews = ? WHERE id = ?').run(stats.avgRating || numRating, stats.count || 1, pId);
+  });
+  insert();
+
+  const reviews = db.prepare('SELECT id, user_name AS userName, rating, comment, created_at AS createdAt FROM reviews WHERE product_id = ? ORDER BY created_at DESC').all(pId);
+  res.status(201).json(reviews);
+});
+
+app.patch('/auth/profile', auth, (req, res) => {
+  const { name } = req.body || {};
+  if (!name || !name.trim()) return res.status(400).json({ message: 'Name is required' });
+  db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name.trim(), req.user.id);
+  const user = db.prepare('SELECT id, name, email, username, role FROM users WHERE id = ?').get(req.user.id);
+  res.json({ user });
+});
+
+app.post('/auth/change-password', auth, (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword || newPassword.length < 6) {
+    return res.status(400).json({ message: 'Current password and a new password (min 6 chars) are required' });
+  }
+  const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !bcrypt.compareSync(currentPassword, user.password_hash)) {
+    return res.status(400).json({ message: 'Incorrect current password' });
+  }
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(newPassword, 10), req.user.id);
+  res.json({ message: 'Password updated successfully' });
+});
+
+app.post('/auth/forgot-password', (req, res) => {
+  const { identifier } = req.body || {};
+  if (!identifier) return res.status(400).json({ message: 'Email or username is required' });
+  const user = db.prepare('SELECT email FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)').get(identifier, identifier);
+  if (!user) {
+    return res.json({ message: 'If the account exists, a reset code was generated.' });
+  }
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  db.prepare('INSERT INTO password_resets (email, code, expires_at) VALUES (?, ?, ?)').run(user.email, code, expiresAt);
+  res.json({ message: 'Verification code generated.', code, email: user.email });
+});
+
+app.post('/auth/reset-password', (req, res) => {
+  const { email, code, newPassword } = req.body || {};
+  if (!email || !code || !newPassword || newPassword.length < 6) {
+    return res.status(400).json({ message: 'Email, valid 6-digit code, and new password (min 6 chars) are required' });
+  }
+  const record = db.prepare('SELECT * FROM password_resets WHERE LOWER(email) = LOWER(?) AND code = ? ORDER BY id DESC LIMIT 1').get(email, code.trim());
+  if (!record || new Date(record.expires_at) < new Date()) {
+    return res.status(400).json({ message: 'Invalid or expired reset code' });
+  }
+  db.prepare('UPDATE users SET password_hash = ? WHERE LOWER(email) = LOWER(?)').run(bcrypt.hashSync(newPassword, 10), email);
+  db.prepare('DELETE FROM password_resets WHERE LOWER(email) = LOWER(?)').run(email);
+  res.json({ message: 'Password has been reset successfully. You can now log in.' });
+});
+
 app.get('/cart', auth, (req, res) => res.json({ cart: Object.fromEntries(cartForUser(req.user.id).map(item => [item.productId, item.quantity])), items: cartForUser(req.user.id) }));
 app.post('/cart', auth, (req, res) => {
   const input = req.body?.cart || {};

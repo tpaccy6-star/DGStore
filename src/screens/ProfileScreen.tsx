@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import {
   Alert,
+  Modal,
   PermissionsAndroid,
   Platform,
   Pressable,
@@ -12,30 +13,38 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 import {
   Building2,
   CreditCard,
+  Edit3,
   Globe,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Mail,
   MapPin,
+  MessageCircle,
   Navigation,
   Phone,
+  PhoneCall,
   RefreshCw,
   Save,
   Server,
   Shield,
   User as UserIcon,
+  X,
 } from 'lucide-react-native';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { useI18n } from '../i18n';
 import { useAppDispatch, useAppSelector } from '../store';
-import { clearAuthState } from '../store/authSlice';
-import { clearAuth } from '../store/authStorage';
+import { clearAuthState, setAuth } from '../store/authSlice';
+import { clearAuth, getStoredAuth, saveAuth } from '../store/authStorage';
+import { updateProfile, changePassword } from '../api/auth';
+import { openWhatsAppConcierge, callConcierge, CONCIERGE_PHONE } from '../utils/concierge';
 import { API_BASE_URL, apiClient, setApiToken } from '../api/client';
 import { getSavedDeliveryAddress, saveDeliveryAddress } from '../store/deliveryStorage';
 import {
@@ -72,6 +81,72 @@ export function ProfileScreen(): React.JSX.Element {
 
   const [serverUrl, setServerUrl] = useState(API_BASE_URL);
   const [testingConnection, setTestingConnection] = useState(false);
+
+  // Profile Editing state
+  const [editNameModalVisible, setEditNameModalVisible] = useState(false);
+  const [nameInput, setNameInput] = useState(user?.name ?? '');
+  const [savingName, setSavingName] = useState(false);
+
+  // Password change state
+  const [changePasswordModalVisible, setChangePasswordModalVisible] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  async function handleSaveName(): Promise<void> {
+    if (!nameInput.trim()) {
+      Alert.alert('Required', 'Please enter your full name.');
+      return;
+    }
+    setSavingName(true);
+    try {
+      const res = await updateProfile({ name: nameInput.trim() });
+      if (res.user) {
+        const stored = await getStoredAuth();
+        if (stored) {
+          const updatedAuth = { ...stored, user: { ...stored.user, name: res.user.name } };
+          await saveAuth(updatedAuth);
+          dispatch(setAuth(updatedAuth));
+        }
+      }
+      setEditNameModalVisible(false);
+      Alert.alert('Updated', 'Your profile name has been updated.');
+    } catch {
+      Alert.alert('Error', 'Unable to update profile name. Please try again.');
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  async function handleChangePassword(): Promise<void> {
+    if (!currentPassword) {
+      Alert.alert('Required', 'Please enter your current password.');
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      Alert.alert('Invalid Password', 'New password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Mismatch', 'New passwords do not match.');
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      await changePassword({ currentPassword, newPassword });
+      setChangePasswordModalVisible(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      Alert.alert('Success', 'Your password has been changed successfully.');
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Unable to update password. Verify your current password.';
+      Alert.alert('Error', msg);
+    } finally {
+      setSavingPassword(false);
+    }
+  }
 
   useEffect(() => {
     NetInfo.fetch()
@@ -247,6 +322,70 @@ export function ProfileScreen(): React.JSX.Element {
               </View>
             </View>
           ) : null}
+
+          {/* Account Action Buttons */}
+          <View style={styles.accountActionButtons}>
+            <TouchableOpacity
+              style={styles.accountActionBtn}
+              onPress={() => {
+                setNameInput(user?.name ?? '');
+                setEditNameModalVisible(true);
+              }}
+            >
+              <Edit3 size={14} color={colors.goldDark} />
+              <Text style={styles.accountActionBtnText}>Edit Name</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.accountActionBtn}
+              onPress={() => {
+                setCurrentPassword('');
+                setNewPassword('');
+                setConfirmPassword('');
+                setChangePasswordModalVisible(true);
+              }}
+            >
+              <KeyRound size={14} color={colors.goldDark} />
+              <Text style={styles.accountActionBtnText}>Change Password</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Boutique Concierge & WhatsApp VIP Support */}
+        <View style={[styles.sectionCard, styles.conciergeSectionCard, cardShadow]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.cardHeaderIconRow}>
+              <MessageCircle color={colors.goldDark} size={18} />
+              <Text style={styles.cardHeaderTitle}>Boutique VIP Concierge (Kigali)</Text>
+            </View>
+          </View>
+          <Text style={styles.helperText}>
+            Direct personal styling, sizing advice, or instant Kigali delivery inquiries.
+          </Text>
+
+          <View style={styles.conciergeButtonRow}>
+            <TouchableOpacity
+              style={styles.whatsappDirectBtn}
+              activeOpacity={0.85}
+              onPress={() =>
+                openWhatsAppConcierge(
+                  `Hello D&G Store Concierge, I am ${user?.name || 'a customer'} inquiring about shopping assistance.`,
+                )
+              }
+            >
+              <MessageCircle size={16} color={colors.white} />
+              <Text style={styles.whatsappDirectBtnText}>Chat on WhatsApp</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.callHotlineBtn}
+              activeOpacity={0.85}
+              onPress={() => callConcierge()}
+            >
+              <PhoneCall size={15} color={colors.ink} />
+              <Text style={styles.callHotlineBtnText}>Call Hotline</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Delivery Place Section */}
@@ -518,6 +657,102 @@ export function ProfileScreen(): React.JSX.Element {
           <Text style={styles.logoutText}>{i18n.t('logoutButton')}</Text>
         </Pressable>
       </ScrollView>
+
+      {/* Edit Name Modal */}
+      <Modal
+        visible={editNameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditNameModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, cardShadow]}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Update Full Name</Text>
+              <TouchableOpacity onPress={() => setEditNameModalVisible(false)}>
+                <X size={18} color={colors.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              style={styles.modalInput}
+              value={nameInput}
+              onChangeText={setNameInput}
+              placeholder="Enter your full name"
+              placeholderTextColor={colors.mutedLight}
+            />
+
+            <TouchableOpacity
+              style={[styles.modalSubmitBtn, savingName && styles.disabledBtn]}
+              disabled={savingName}
+              onPress={handleSaveName}
+            >
+              <Text style={styles.modalSubmitBtnText}>
+                {savingName ? 'Saving...' : 'SAVE CHANGES'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Change Password Modal */}
+      <Modal
+        visible={changePasswordModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setChangePasswordModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, cardShadow]}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Change Password</Text>
+              <TouchableOpacity onPress={() => setChangePasswordModalVisible(false)}>
+                <X size={18} color={colors.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalInputLabel}>Current Password</Text>
+            <TextInput
+              style={styles.modalInput}
+              secureTextEntry
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              placeholder="Enter current password"
+              placeholderTextColor={colors.mutedLight}
+            />
+
+            <Text style={styles.modalInputLabel}>New Password (min 6 chars)</Text>
+            <TextInput
+              style={styles.modalInput}
+              secureTextEntry
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="Enter new password"
+              placeholderTextColor={colors.mutedLight}
+            />
+
+            <Text style={styles.modalInputLabel}>Confirm New Password</Text>
+            <TextInput
+              style={styles.modalInput}
+              secureTextEntry
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Re-enter new password"
+              placeholderTextColor={colors.mutedLight}
+            />
+
+            <TouchableOpacity
+              style={[styles.modalSubmitBtn, savingPassword && styles.disabledBtn]}
+              disabled={savingPassword}
+              onPress={handleChangePassword}
+            >
+              <Text style={styles.modalSubmitBtnText}>
+                {savingPassword ? 'Updating...' : 'UPDATE PASSWORD'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <BottomNav active="Profile" signedIn />
     </View>
@@ -894,5 +1129,130 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 10,
     fontWeight: '700',
+  },
+  accountActionButtons: {
+    borderTopColor: colors.lineLight,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+  },
+  accountActionBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.goldLight,
+    borderColor: colors.goldMuted,
+    borderRadius: spacing.radiusSm,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  accountActionBtnText: {
+    color: colors.goldDark,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  conciergeSectionCard: {
+    backgroundColor: colors.card,
+    borderColor: colors.goldMuted,
+  },
+  conciergeButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: spacing.md,
+  },
+  whatsappDirectBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: spacing.radiusSm,
+    flex: 1.2,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  whatsappDirectBtnText: {
+    color: colors.goldBright,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  callHotlineBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.goldLight,
+    borderColor: colors.goldMuted,
+    borderRadius: spacing.radiusSm,
+    borderWidth: 1,
+    flex: 0.9,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  callHotlineBtnText: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    alignItems: 'center',
+    backgroundColor: colors.overlay,
+    flex: 1,
+    justifyContent: 'center',
+    padding: spacing.page,
+  },
+  modalCard: {
+    backgroundColor: colors.card,
+    borderRadius: spacing.radiusLg,
+    padding: spacing.lg,
+    width: '100%',
+  },
+  modalHeaderRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  modalTitle: {
+    color: colors.ink,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  modalInputLabel: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
+    marginTop: 8,
+  },
+  modalInput: {
+    backgroundColor: colors.paper,
+    borderColor: colors.line,
+    borderRadius: spacing.radiusSm,
+    borderWidth: 1,
+    color: colors.ink,
+    fontSize: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  modalSubmitBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: spacing.radiusSm,
+    justifyContent: 'center',
+    marginTop: spacing.lg,
+    paddingVertical: 14,
+  },
+  modalSubmitBtnText: {
+    color: colors.goldBright,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  disabledBtn: {
+    opacity: 0.5,
   },
 });

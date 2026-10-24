@@ -8,6 +8,7 @@ export type RootStackParamList = {
   Products: undefined;
   ProductDetails: { product: Product };
   Cart: undefined;
+  Wishlist: undefined;
   Checkout: undefined;
   Orders: undefined;
   OrderDetails: { order: OrderResponse };

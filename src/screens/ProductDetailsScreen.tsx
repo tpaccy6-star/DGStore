@@ -6,6 +6,8 @@ import {
   Check,
   CheckCircle2,
   Heart,
+  MessageCircle,
+  Send,
   ShoppingBag,
   Star,
   Truck,
@@ -21,14 +23,20 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { formatRwf, useI18n } from '../i18n';
 import type { RootStackParamList } from '../navigation/types';
 import { useAppDispatch, useAppSelector } from '../store';
 import { addItem } from '../store/cartSlice';
+import { toggleWishlist } from '../store/wishlistSlice';
 import { cardShadow, colors, spacing } from '../theme';
 import { StoreHeader } from '../components/StoreHeader';
+import { getProductReviews, submitProductReview, type Review } from '../api/reviews';
+import { openWhatsAppConcierge } from '../utils/concierge';
+import { useEffect } from 'react';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetails'>;
 
@@ -39,13 +47,60 @@ export function ProductDetailsScreen(): React.JSX.Element {
   const route = useRoute<Props['route']>();
   const { product } = route.params;
 
+  const user = useAppSelector(state => state.auth.user);
   const cartItems = useAppSelector(state => state.cart.items);
+  const wishlistItems = useAppSelector(state => state.wishlist.items);
+  const isFav = wishlistItems.some(w => w.id === product.id);
   const existingInCart =
     cartItems.find(entry => entry.productId === String(product.id))?.quantity ?? 0;
   const totalCartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
   const [quantity, setQuantity] = useState(1);
   const [justAdded, setJustAdded] = useState(false);
+
+  // Reviews state
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loadingReviews, setLoadingReviews] = useState(true);
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [newRating, setNewRating] = useState(5);
+  const [newComment, setNewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+
+  useEffect(() => {
+    getProductReviews(product.id)
+      .then(setReviews)
+      .catch(() => setReviews([]))
+      .finally(() => setLoadingReviews(false));
+  }, [product.id]);
+
+  const handleReviewSubmit = async () => {
+    if (!user) {
+      Alert.alert('Sign In Required', 'Please sign in to share your customer review.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign In', onPress: () => navigation.navigate('Login') },
+      ]);
+      return;
+    }
+    if (!newComment.trim()) {
+      Alert.alert('Comment Required', 'Please write a brief comment describing your experience.');
+      return;
+    }
+    setSubmittingReview(true);
+    try {
+      const updated = await submitProductReview(product.id, {
+        rating: newRating,
+        comment: newComment.trim(),
+      });
+      setReviews(updated);
+      setNewComment('');
+      setShowReviewForm(false);
+      Alert.alert('Thank You', 'Your review has been submitted successfully.');
+    } catch {
+      Alert.alert('Error', 'Unable to submit review. Please try again.');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
 
   const isOutOfStock = product.stock < 1;
 
@@ -80,9 +135,19 @@ export function ProductDetailsScreen(): React.JSX.Element {
         <View style={styles.imageWrap}>
           <Image resizeMode="cover" source={{ uri: product.image }} style={styles.image} />
           {product.oldPrice ? <Text style={styles.sale}>SALE</Text> : null}
-          <View style={styles.favoriteButton}>
-            <Heart color={colors.ink} fill="transparent" size={20} strokeWidth={1.8} />
-          </View>
+          <Pressable
+            accessibilityLabel="Toggle favorite"
+            onPress={() => dispatch(toggleWishlist(product))}
+            hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
+            style={styles.favoriteButton}
+          >
+            <Heart
+              color={isFav ? colors.goldDark : colors.ink}
+              fill={isFav ? colors.gold : 'transparent'}
+              size={20}
+              strokeWidth={1.8}
+            />
+          </Pressable>
         </View>
 
         {/* Product Info */}
@@ -244,6 +309,122 @@ export function ProductDetailsScreen(): React.JSX.Element {
               <Text style={styles.buyNowButtonText}>Buy Now</Text>
               <ArrowRight color={colors.white} size={16} />
             </Pressable>
+          </View>
+
+          {/* WhatsApp Boutique Concierge Consultation */}
+          <TouchableOpacity
+            style={[styles.conciergeCard, cardShadow]}
+            activeOpacity={0.85}
+            onPress={() =>
+              openWhatsAppConcierge(
+                `Hello D&G Store Concierge, I would like to inquire about "${product.name}" (Ref: #${product.id}). Is this available for delivery in Kigali?`,
+              )
+            }
+          >
+            <View style={styles.conciergeIconBox}>
+              <MessageCircle size={22} color={colors.goldDark} />
+            </View>
+            <View style={styles.conciergeTextWrap}>
+              <Text style={styles.conciergeTitle}>Inquire with Boutique Concierge</Text>
+              <Text style={styles.conciergeSubtitle}>
+                Chat on WhatsApp about sizing, fit, or instant Kigali delivery
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Customer Reviews Section */}
+          <View style={[styles.reviewsSection, cardShadow]}>
+            <View style={styles.reviewsHeaderRow}>
+              <View>
+                <Text style={styles.reviewsSectionTitle}>Customer Reviews</Text>
+                <View style={styles.reviewsRatingSummary}>
+                  <Star size={14} color={colors.gold} fill={colors.gold} />
+                  <Text style={styles.reviewsAvgText}>
+                    {product.rating.toFixed(1)} out of 5 ({reviews.length > 0 ? reviews.length : product.reviews} reviews)
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.writeReviewToggleBtn}
+                onPress={() => setShowReviewForm(f => !f)}
+              >
+                <Text style={styles.writeReviewToggleText}>
+                  {showReviewForm ? 'Cancel' : '+ Write Review'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Write Review Form */}
+            {showReviewForm && (
+              <View style={styles.reviewFormBox}>
+                <Text style={styles.ratingSelectLabel}>Select Rating:</Text>
+                <View style={styles.starsRow}>
+                  {[1, 2, 3, 4, 5].map(star => (
+                    <TouchableOpacity
+                      key={star}
+                      onPress={() => setNewRating(star)}
+                      style={styles.starSelectBtn}
+                    >
+                      <Star
+                        size={22}
+                        color={star <= newRating ? colors.gold : colors.mutedLight}
+                        fill={star <= newRating ? colors.gold : 'transparent'}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <TextInput
+                  style={styles.reviewInput}
+                  multiline
+                  placeholder="Share your experience with this luxury item..."
+                  placeholderTextColor={colors.mutedLight}
+                  value={newComment}
+                  onChangeText={setNewComment}
+                />
+
+                <TouchableOpacity
+                  style={[styles.submitReviewBtn, submittingReview && styles.disabled]}
+                  disabled={submittingReview}
+                  onPress={handleReviewSubmit}
+                >
+                  <Send size={15} color={colors.white} />
+                  <Text style={styles.submitReviewText}>
+                    {submittingReview ? 'Submitting...' : 'SUBMIT REVIEW'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Reviews List */}
+            {reviews.length === 0 ? (
+              <Text style={styles.noReviewsText}>
+                No written customer reviews yet. Be the first to share your thoughts!
+              </Text>
+            ) : (
+              reviews.map(item => (
+                <View key={item.id} style={styles.reviewItem}>
+                  <View style={styles.reviewItemHeader}>
+                    <Text style={styles.reviewerName}>{item.userName}</Text>
+                    <View style={styles.reviewerStars}>
+                      {[1, 2, 3, 4, 5].map(s => (
+                        <Star
+                          key={s}
+                          size={11}
+                          color={s <= item.rating ? colors.gold : colors.line}
+                          fill={s <= item.rating ? colors.gold : 'transparent'}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                  <Text style={styles.reviewComment}>{item.comment}</Text>
+                  <Text style={styles.reviewDate}>
+                    {item.createdAt ? item.createdAt.split('T')[0] : 'Verified Buyer'}
+                  </Text>
+                </View>
+              ))
+            )}
           </View>
 
           {/* Keep shopping link */}
@@ -575,5 +756,169 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 11,
     fontWeight: '800',
+  },
+  conciergeCard: {
+    alignItems: 'center',
+    backgroundColor: colors.goldLight,
+    borderColor: colors.goldMuted,
+    borderRadius: spacing.radius,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+  },
+  conciergeIconBox: {
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderColor: colors.goldMuted,
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  conciergeTextWrap: {
+    flex: 1,
+  },
+  conciergeTitle: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  conciergeSubtitle: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  reviewsSection: {
+    backgroundColor: colors.card,
+    borderColor: colors.lineLight,
+    borderRadius: spacing.radius,
+    borderWidth: 1,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+  },
+  reviewsHeaderRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  reviewsSectionTitle: {
+    color: colors.ink,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  reviewsRatingSummary: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 2,
+  },
+  reviewsAvgText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  writeReviewToggleBtn: {
+    backgroundColor: colors.goldLight,
+    borderColor: colors.goldMuted,
+    borderRadius: spacing.radiusPill,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  writeReviewToggleText: {
+    color: colors.goldDark,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  reviewFormBox: {
+    backgroundColor: colors.paper,
+    borderColor: colors.lineLight,
+    borderRadius: spacing.radiusSm,
+    borderWidth: 1,
+    marginBottom: spacing.md,
+    marginTop: spacing.sm,
+    padding: spacing.md,
+  },
+  ratingSelectLabel: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: spacing.md,
+  },
+  starSelectBtn: {
+    padding: 2,
+  },
+  reviewInput: {
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderRadius: spacing.radiusSm,
+    borderWidth: 1,
+    color: colors.ink,
+    fontSize: 13,
+    minHeight: 70,
+    padding: spacing.sm,
+    textAlignVertical: 'top',
+  },
+  submitReviewBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: spacing.radiusSm,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    marginTop: spacing.sm + 2,
+    paddingVertical: 10,
+  },
+  submitReviewText: {
+    color: colors.goldBright,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  noReviewsText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontStyle: 'italic',
+    paddingVertical: spacing.sm,
+  },
+  reviewItem: {
+    borderTopColor: colors.lineLight,
+    borderTopWidth: 1,
+    paddingVertical: spacing.sm + 4,
+  },
+  reviewItemHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  reviewerName: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  reviewerStars: {
+    flexDirection: 'row',
+    gap: 2,
+  },
+  reviewComment: {
+    color: colors.inkLight,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  reviewDate: {
+    color: colors.mutedLight,
+    fontSize: 10,
   },
 });
